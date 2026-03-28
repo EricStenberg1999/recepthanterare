@@ -4,7 +4,7 @@ import { supabase } from "../supabase"
 // Tillgängliga enheter i appen
 const UNITS = ["st", "g", "kg", "dl", "l", "msk", "tsk", "krm", "nypa"]
 
-function Fridge() {
+function Fridge({ session }) {
   const [items, setItems] = useState([])
   const [name, setName] = useState("")
   const [amount, setAmount] = useState("")
@@ -60,7 +60,7 @@ async function addItem() {
         ingredient_name: name.toLowerCase().trim(),
         amount: amount ? parseFloat(amount) : null,
         unit: unit,
-        user_id: "default"
+        user_id: session.user.id
       }])
 
     if (error) {

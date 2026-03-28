@@ -16,38 +16,35 @@ function Fridge() {
     fetchItems()
   }, [])
 
-  async function fetchItems() {
-    const { data, error } = await supabase
-      .from("fridge")
-      .select("*")
-      .order("ingredient_name")
+async function fetchItems() {
+  const { data, error } = await supabase
+    .from("fridge")
+    .select("*")
+    .order("ingredient_name")
 
-    if (error) {
-      console.error("Fel vid hämtning:", error)
-    } else {
-      setItems(data)
-    }
-    setLoading(false)
+  if (error) {
+    console.error("Fel vid hämtning:", error)
+  } else {
+    setItems(data)
   }
+  setLoading(false)
+}
 
-  // Lägg till eller uppdatera en ingrediens i kylen
 async function addItem() {
   if (!name.trim()) return
 
-  // Kolla om ingrediensen redan finns i kylen
   const existing = items.find(
     item => item.ingredient_name.toLowerCase() === name.toLowerCase().trim()
   )
 
-  console.log("Söker efter:", name.toLowerCase().trim())
-  console.log("Hittade:", existing)
-
   if (existing) {
-    // Uppdatera befintlig ingrediens
+    const currentAmount = existing.amount || 0
+    const newAmount = currentAmount + (amount ? parseFloat(amount) : 0)
+
     const { error } = await supabase
       .from("fridge")
       .update({
-        amount: amount ? parseFloat(amount) : null,
+        amount: newAmount,
         unit: unit
       })
       .eq("id", existing.id)
@@ -57,7 +54,6 @@ async function addItem() {
       return
     }
   } else {
-    // Lägg till ny ingrediens
     const { error } = await supabase
       .from("fridge")
       .insert([{
@@ -73,7 +69,6 @@ async function addItem() {
     }
   }
 
-  // Rensa formuläret och uppdatera listan
   setName("")
   setAmount("")
   setUnit("st")

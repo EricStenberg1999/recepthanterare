@@ -39,6 +39,9 @@ async function addItem() {
     item => item.ingredient_name.toLowerCase() === name.toLowerCase().trim()
   )
 
+  console.log("Söker efter:", name.toLowerCase().trim())
+  console.log("Hittade:", existing)
+
   if (existing) {
     // Uppdatera befintlig ingrediens
     const { error } = await supabase

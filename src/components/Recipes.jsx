@@ -10,8 +10,8 @@ function Recipes({ session }) {
   const [showForm, setShowForm] = useState(false)
   const [activeTab, setActiveTab] = useState("mine")
   const [loading, setLoading] = useState(true)
+  const [editingRecipe, setEditingRecipe] = useState(null)
 
-  // Formulärdata för nytt recept
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [instructions, setInstructions] = useState("")
@@ -32,9 +32,6 @@ function Recipes({ session }) {
     if (error) {
       console.error("Fel vid hämtning:", error)
     } else {
-      console.log("All data:", data)
-      console.log("Session user id:", session.user.id)
-      // Dela upp i mina recept och delade recept
       setMyRecipes(data.filter(r => r.user_id === session.user.id))
       setSharedRecipes(data.filter(r => r.is_shared && r.user_id !== session.user.id))
     }
@@ -55,52 +52,117 @@ function Recipes({ session }) {
     setIngredients(ingredients.filter((_, i) => i !== index))
   }
 
-  async function saveRecipe() {
-    if (!name.trim()) return
+  // Förifyll formuläret med befintligt recept för redigering
+  function startEditing(recipe) {
+    setEditingRecipe(recipe)
+    setName(recipe.name)
+    setDescription(recipe.description || "")
+    setInstructions(recipe.instructions || "")
+    setIngredients(recipe.recipe_ingredients.map(i => ({
+      id: i.id,
+      ingredient_name: i.ingredient_name,
+      amount: i.amount || "",
+      unit: i.unit
+    })))
+    setShowForm(true)
+    setSelectedRecipe(null)
+  }
 
-    const { data: recipeData, error: recipeError } = await supabase
-      .from("recipes")
-      .insert([{
-        name: name.trim(),
-        description: description.trim(),
-        instructions: instructions.trim(),
-        source: "own",
-        user_id: session.user.id,
-        is_shared: false
-      }])
-      .select()
-
-    if (recipeError) {
-      console.error("Fel vid sparande av recept:", recipeError)
-      return
-    }
-
-    const recipeId = recipeData[0].id
-    const ingredientsToSave = ingredients
-      .filter(i => i.ingredient_name.trim() !== "")
-      .map(i => ({
-        recipe_id: recipeId,
-        ingredient_name: i.ingredient_name.toLowerCase().trim(),
-        amount: i.amount ? parseFloat(i.amount) : null,
-        unit: i.unit
-      }))
-
-    if (ingredientsToSave.length > 0) {
-      const { error: ingError } = await supabase
-        .from("recipe_ingredients")
-        .insert(ingredientsToSave)
-
-      if (ingError) {
-        console.error("Fel vid sparande av ingredienser:", ingError)
-        return
-      }
-    }
-
+  function cancelForm() {
+    setShowForm(false)
+    setEditingRecipe(null)
     setName("")
     setDescription("")
     setInstructions("")
     setIngredients([{ ingredient_name: "", amount: "", unit: "st" }])
-    setShowForm(false)
+  }
+
+  async function saveRecipe() {
+    if (!name.trim()) return
+
+    if (editingRecipe) {
+      // Uppdatera befintligt recept
+      const { error: recipeError } = await supabase
+        .from("recipes")
+        .update({
+          name: name.trim(),
+          description: description.trim(),
+          instructions: instructions.trim()
+        })
+        .eq("id", editingRecipe.id)
+
+      if (recipeError) {
+        console.error("Fel vid uppdatering av recept:", recipeError)
+        return
+      }
+
+      // Ta bort gamla ingredienser och lägg till nya
+      await supabase
+        .from("recipe_ingredients")
+        .delete()
+        .eq("recipe_id", editingRecipe.id)
+
+      const ingredientsToSave = ingredients
+        .filter(i => i.ingredient_name.trim() !== "")
+        .map(i => ({
+          recipe_id: editingRecipe.id,
+          ingredient_name: i.ingredient_name.toLowerCase().trim(),
+          amount: i.amount ? parseFloat(i.amount) : null,
+          unit: i.unit
+        }))
+
+      if (ingredientsToSave.length > 0) {
+        const { error: ingError } = await supabase
+          .from("recipe_ingredients")
+          .insert(ingredientsToSave)
+
+        if (ingError) {
+          console.error("Fel vid sparande av ingredienser:", ingError)
+          return
+        }
+      }
+    } else {
+      // Skapa nytt recept
+      const { data: recipeData, error: recipeError } = await supabase
+        .from("recipes")
+        .insert([{
+          name: name.trim(),
+          description: description.trim(),
+          instructions: instructions.trim(),
+          source: "own",
+          user_id: session.user.id,
+          is_shared: false
+        }])
+        .select()
+
+      if (recipeError) {
+        console.error("Fel vid sparande av recept:", recipeError)
+        return
+      }
+
+      const recipeId = recipeData[0].id
+      const ingredientsToSave = ingredients
+        .filter(i => i.ingredient_name.trim() !== "")
+        .map(i => ({
+          recipe_id: recipeId,
+          ingredient_name: i.ingredient_name.toLowerCase().trim(),
+          amount: i.amount ? parseFloat(i.amount) : null,
+          unit: i.unit
+        }))
+
+      if (ingredientsToSave.length > 0) {
+        const { error: ingError } = await supabase
+          .from("recipe_ingredients")
+          .insert(ingredientsToSave)
+
+        if (ingError) {
+          console.error("Fel vid sparande av ingredienser:", ingError)
+          return
+        }
+      }
+    }
+
+    cancelForm()
     fetchRecipes()
   }
 
@@ -118,7 +180,6 @@ function Recipes({ session }) {
     }
   }
 
-  // Dela eller avdela ett recept
   async function toggleShare(recipe) {
     const { error } = await supabase
       .from("recipes")
@@ -129,14 +190,13 @@ function Recipes({ session }) {
       console.error("Fel vid delning:", error)
     } else {
       fetchRecipes()
-      // Uppdatera detaljvyn om det är det valda receptet
       setSelectedRecipe({ ...recipe, is_shared: !recipe.is_shared })
     }
   }
 
   if (loading) return <p>Laddar...</p>
 
-  // Detaljvy för ett valt recept
+  // Detaljvy
   if (selectedRecipe) {
     const isOwner = selectedRecipe.user_id === session.user.id
     return (
@@ -187,13 +247,20 @@ function Recipes({ session }) {
           )}
 
           {isOwner && (
-            <button
-              className="danger"
-              style={{ marginTop: "20px" }}
-              onClick={() => deleteRecipe(selectedRecipe.id)}
-            >
-              Ta bort recept
-            </button>
+            <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+              <button
+                className="primary"
+                onClick={() => startEditing(selectedRecipe)}
+              >
+                Redigera recept
+              </button>
+              <button
+                className="danger"
+                onClick={() => deleteRecipe(selectedRecipe.id)}
+              >
+                Ta bort recept
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -206,16 +273,12 @@ function Recipes({ session }) {
     <div>
       <h2 style={{ marginBottom: "20px" }}>📖 Recept</h2>
 
-      {/* Flikar för mina recept och delade recept */}
+      {/* Flikar */}
       <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
         <button
           onClick={() => setActiveTab("mine")}
           style={{
-            flex: 1,
-            padding: "10px",
-            border: "none",
-            borderRadius: "8px",
-            cursor: "pointer",
+            flex: 1, padding: "10px", border: "none", borderRadius: "8px", cursor: "pointer",
             background: activeTab === "mine" ? "#4CAF50" : "#e0e0e0",
             color: activeTab === "mine" ? "white" : "#666",
             fontWeight: activeTab === "mine" ? "bold" : "normal"
@@ -226,11 +289,7 @@ function Recipes({ session }) {
         <button
           onClick={() => setActiveTab("shared")}
           style={{
-            flex: 1,
-            padding: "10px",
-            border: "none",
-            borderRadius: "8px",
-            cursor: "pointer",
+            flex: 1, padding: "10px", border: "none", borderRadius: "8px", cursor: "pointer",
             background: activeTab === "shared" ? "#4CAF50" : "#e0e0e0",
             color: activeTab === "shared" ? "white" : "#666",
             fontWeight: activeTab === "shared" ? "normal" : "normal"
@@ -240,21 +299,23 @@ function Recipes({ session }) {
         </button>
       </div>
 
-      {/* Knapp för att lägga till recept – bara på mina recept */}
+      {/* Knapp för nytt recept */}
       {activeTab === "mine" && (
         <button
           className="primary"
           style={{ marginBottom: "20px" }}
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => showForm ? cancelForm() : setShowForm(true)}
         >
           {showForm ? "Avbryt" : "+ Lägg till recept"}
         </button>
       )}
 
-      {/* Formulär för nytt recept */}
+      {/* Formulär */}
       {showForm && (
         <div className="card">
-          <h3 style={{ marginBottom: "15px" }}>Nytt recept</h3>
+          <h3 style={{ marginBottom: "15px" }}>
+            {editingRecipe ? "Redigera recept" : "Nytt recept"}
+          </h3>
           <input
             type="text"
             placeholder="Receptnamn"
@@ -294,12 +355,7 @@ function Recipes({ session }) {
                   <option key={u} value={u}>{u}</option>
                 ))}
               </select>
-              <button
-                className="danger"
-                onClick={() => removeIngredientRow(index)}
-              >
-                ✕
-              </button>
+              <button className="danger" onClick={() => removeIngredientRow(index)}>✕</button>
             </div>
           ))}
           <button
@@ -318,7 +374,7 @@ function Recipes({ session }) {
           />
 
           <button className="primary" onClick={saveRecipe}>
-            Spara recept
+            {editingRecipe ? "Spara ändringar" : "Spara recept"}
           </button>
         </div>
       )}

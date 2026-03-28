@@ -21,7 +21,7 @@ const CONVERSIONS = {
 function sameUnitType(unit1, unit2) {
   const volume = ["krm", "tsk", "msk", "dl", "l"]
   const weight = ["g", "kg"]
-  const piece = ["st", "nypa"]
+  const piece = ["st", "nypa", "klyfta"]
 
   if (volume.includes(unit1) && volume.includes(unit2)) return "volume"
   if (weight.includes(unit1) && weight.includes(unit2)) return "weight"
@@ -53,7 +53,7 @@ function calculateMissing(needed, available) {
   return { ...needed, amount: Math.ceil(missingAmount) }
 }
 
-function ShoppingList() {
+function ShoppingList({ session }) {
   const [recipes, setRecipes] = useState([])
   const [fridgeItems, setFridgeItems] = useState([])
   const [selectedRecipe, setSelectedRecipe] = useState("")

@@ -79,7 +79,7 @@ function App() {
       {activePage === "fridge" && <Fridge session={session} />}
       {activePage === "recipes" && <Recipes session={session} />}
       {activePage === "suggestions" && <Suggestions />}
-      {activePage === "shopping" && <ShoppingList />} 
+      {activePage === "shopping" && <ShoppingList session={session}/>} 
     </div>
   )
 }

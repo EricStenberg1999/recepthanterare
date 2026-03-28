@@ -51,6 +51,7 @@ async function addItem() {
 
     if (error) {
       console.error("Fel vid uppdatering:", error)
+      return
     }
   } else {
     // Lägg till ny ingrediens
@@ -65,6 +66,7 @@ async function addItem() {
 
     if (error) {
       console.error("Fel vid tillägg:", error)
+      return
     }
   }
 
@@ -74,6 +76,7 @@ async function addItem() {
   setUnit("st")
   fetchItems()
 }
+
 
   // Ta bort en ingrediens från kylen
   async function deleteItem(id) {

@@ -30,10 +30,30 @@ function Fridge() {
     setLoading(false)
   }
 
-  // Lägg till en ny ingrediens i kylen
-  async function addItem() {
-    if (!name.trim()) return
+  // Lägg till eller uppdatera en ingrediens i kylen
+async function addItem() {
+  if (!name.trim()) return
 
+  // Kolla om ingrediensen redan finns i kylen
+  const existing = items.find(
+    item => item.ingredient_name.toLowerCase() === name.toLowerCase().trim()
+  )
+
+  if (existing) {
+    // Uppdatera befintlig ingrediens
+    const { error } = await supabase
+      .from("fridge")
+      .update({
+        amount: amount ? parseFloat(amount) : null,
+        unit: unit
+      })
+      .eq("id", existing.id)
+
+    if (error) {
+      console.error("Fel vid uppdatering:", error)
+    }
+  } else {
+    // Lägg till ny ingrediens
     const { error } = await supabase
       .from("fridge")
       .insert([{
@@ -45,14 +65,15 @@ function Fridge() {
 
     if (error) {
       console.error("Fel vid tillägg:", error)
-    } else {
-      // Rensa formuläret och uppdatera listan
-      setName("")
-      setAmount("")
-      setUnit("st")
-      fetchItems()
     }
   }
+
+  // Rensa formuläret och uppdatera listan
+  setName("")
+  setAmount("")
+  setUnit("st")
+  fetchItems()
+}
 
   // Ta bort en ingrediens från kylen
   async function deleteItem(id) {

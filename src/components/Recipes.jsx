@@ -3,10 +3,12 @@ import { supabase } from "../supabase"
 
 const UNITS = ["st", "g", "kg", "dl", "l", "msk", "tsk", "krm", "nypa"]
 
-function Recipes() {
-  const [recipes, setRecipes] = useState([])
+function Recipes({ session }) {
+  const [myRecipes, setMyRecipes] = useState([])
+  const [sharedRecipes, setSharedRecipes] = useState([])
   const [selectedRecipe, setSelectedRecipe] = useState(null)
   const [showForm, setShowForm] = useState(false)
+  const [activeTab, setActiveTab] = useState("mine")
   const [loading, setLoading] = useState(true)
 
   // Formulärdata för nytt recept
@@ -30,24 +32,25 @@ function Recipes() {
     if (error) {
       console.error("Fel vid hämtning:", error)
     } else {
-      setRecipes(data)
+      console.log("All data:", data)
+      console.log("Session user id:", session.user.id)
+      // Dela upp i mina recept och delade recept
+      setMyRecipes(data.filter(r => r.user_id === session.user.id))
+      setSharedRecipes(data.filter(r => r.is_shared && r.user_id !== session.user.id))
     }
     setLoading(false)
   }
 
-  // Lägg till en ingrediensrad i formuläret
   function addIngredientRow() {
     setIngredients([...ingredients, { ingredient_name: "", amount: "", unit: "st" }])
   }
 
-  // Uppdatera en specifik ingrediensrad
   function updateIngredient(index, field, value) {
     const updated = [...ingredients]
     updated[index][field] = value
     setIngredients(updated)
   }
 
-  // Ta bort en ingrediensrad från formuläret
   function removeIngredientRow(index) {
     setIngredients(ingredients.filter((_, i) => i !== index))
   }
@@ -55,7 +58,6 @@ function Recipes() {
   async function saveRecipe() {
     if (!name.trim()) return
 
-    // Spara själva receptet först
     const { data: recipeData, error: recipeError } = await supabase
       .from("recipes")
       .insert([{
@@ -63,7 +65,8 @@ function Recipes() {
         description: description.trim(),
         instructions: instructions.trim(),
         source: "own",
-        user_id: "default"
+        user_id: session.user.id,
+        is_shared: false
       }])
       .select()
 
@@ -72,7 +75,6 @@ function Recipes() {
       return
     }
 
-    // Spara ingredienserna kopplade till receptet
     const recipeId = recipeData[0].id
     const ingredientsToSave = ingredients
       .filter(i => i.ingredient_name.trim() !== "")
@@ -94,7 +96,6 @@ function Recipes() {
       }
     }
 
-    // Rensa formuläret och uppdatera listan
     setName("")
     setDescription("")
     setInstructions("")
@@ -117,10 +118,27 @@ function Recipes() {
     }
   }
 
+  // Dela eller avdela ett recept
+  async function toggleShare(recipe) {
+    const { error } = await supabase
+      .from("recipes")
+      .update({ is_shared: !recipe.is_shared })
+      .eq("id", recipe.id)
+
+    if (error) {
+      console.error("Fel vid delning:", error)
+    } else {
+      fetchRecipes()
+      // Uppdatera detaljvyn om det är det valda receptet
+      setSelectedRecipe({ ...recipe, is_shared: !recipe.is_shared })
+    }
+  }
+
   if (loading) return <p>Laddar...</p>
 
-  // Visa detaljvy för ett valt recept
+  // Detaljvy för ett valt recept
   if (selectedRecipe) {
+    const isOwner = selectedRecipe.user_id === session.user.id
     return (
       <div>
         <button
@@ -130,7 +148,26 @@ function Recipes() {
           ← Tillbaka
         </button>
         <div className="card">
-          <h2>{selectedRecipe.name}</h2>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <h2>{selectedRecipe.name}</h2>
+            {isOwner && (
+              <button
+                onClick={() => toggleShare(selectedRecipe)}
+                style={{
+                  background: selectedRecipe.is_shared ? "#4CAF50" : "none",
+                  border: "1px solid #4CAF50",
+                  color: selectedRecipe.is_shared ? "white" : "#4CAF50",
+                  padding: "6px 12px",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontSize: "13px"
+                }}
+              >
+                {selectedRecipe.is_shared ? "✓ Delat" : "Dela recept"}
+              </button>
+            )}
+          </div>
+
           {selectedRecipe.description && (
             <p style={{ color: "#666", margin: "10px 0" }}>{selectedRecipe.description}</p>
           )}
@@ -149,30 +186,70 @@ function Recipes() {
             </>
           )}
 
-          <button
-            className="danger"
-            style={{ marginTop: "20px" }}
-            onClick={() => deleteRecipe(selectedRecipe.id)}
-          >
-            Ta bort recept
-          </button>
+          {isOwner && (
+            <button
+              className="danger"
+              style={{ marginTop: "20px" }}
+              onClick={() => deleteRecipe(selectedRecipe.id)}
+            >
+              Ta bort recept
+            </button>
+          )}
         </div>
       </div>
     )
   }
 
+  const displayedRecipes = activeTab === "mine" ? myRecipes : sharedRecipes
+
   return (
     <div>
-      <h2 style={{ marginBottom: "20px" }}>📖 Mina recept</h2>
+      <h2 style={{ marginBottom: "20px" }}>📖 Recept</h2>
 
-      {/* Knapp för att visa/dölja formuläret */}
-      <button
-        className="primary"
-        style={{ marginBottom: "20px" }}
-        onClick={() => setShowForm(!showForm)}
-      >
-        {showForm ? "Avbryt" : "+ Lägg till recept"}
-      </button>
+      {/* Flikar för mina recept och delade recept */}
+      <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
+        <button
+          onClick={() => setActiveTab("mine")}
+          style={{
+            flex: 1,
+            padding: "10px",
+            border: "none",
+            borderRadius: "8px",
+            cursor: "pointer",
+            background: activeTab === "mine" ? "#4CAF50" : "#e0e0e0",
+            color: activeTab === "mine" ? "white" : "#666",
+            fontWeight: activeTab === "mine" ? "bold" : "normal"
+          }}
+        >
+          Mina recept ({myRecipes.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("shared")}
+          style={{
+            flex: 1,
+            padding: "10px",
+            border: "none",
+            borderRadius: "8px",
+            cursor: "pointer",
+            background: activeTab === "shared" ? "#4CAF50" : "#e0e0e0",
+            color: activeTab === "shared" ? "white" : "#666",
+            fontWeight: activeTab === "shared" ? "normal" : "normal"
+          }}
+        >
+          Delade recept ({sharedRecipes.length})
+        </button>
+      </div>
+
+      {/* Knapp för att lägga till recept – bara på mina recept */}
+      {activeTab === "mine" && (
+        <button
+          className="primary"
+          style={{ marginBottom: "20px" }}
+          onClick={() => setShowForm(!showForm)}
+        >
+          {showForm ? "Avbryt" : "+ Lägg till recept"}
+        </button>
+      )}
 
       {/* Formulär för nytt recept */}
       {showForm && (
@@ -246,12 +323,14 @@ function Recipes() {
         </div>
       )}
 
-      {/* Lista över recept */}
+      {/* Receptlista */}
       <div className="card">
-        {recipes.length === 0 ? (
-          <p style={{ color: "#999" }}>Inga recept än – lägg till ditt första!</p>
+        {displayedRecipes.length === 0 ? (
+          <p style={{ color: "#999" }}>
+            {activeTab === "mine" ? "Inga recept än – lägg till ditt första!" : "Inga delade recept än!"}
+          </p>
         ) : (
-          recipes.map(recipe => (
+          displayedRecipes.map(recipe => (
             <div
               key={recipe.id}
               onClick={() => setSelectedRecipe(recipe)}
@@ -266,6 +345,9 @@ function Recipes() {
             >
               <div>
                 <strong>{recipe.name}</strong>
+                {recipe.is_shared && (
+                  <span style={{ fontSize: "12px", color: "#4CAF50", marginLeft: "8px" }}>● Delat</span>
+                )}
                 {recipe.description && (
                   <p style={{ color: "#666", fontSize: "13px", marginTop: "3px" }}>{recipe.description}</p>
                 )}

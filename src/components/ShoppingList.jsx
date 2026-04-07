@@ -1,27 +1,22 @@
 import { useState, useEffect } from "react"
 import { supabase } from "../supabase"
 
-// Konverteringstabell för att jämföra mängder i olika enheter
 const CONVERSIONS = {
-  // Volym – allt konverteras till ml
   krm: 1,
   tsk: 5,
   msk: 15,
   dl: 100,
   l: 1000,
-  // Vikt – allt konverteras till gram
   g: 1,
   kg: 1000,
-  // Styck – ingen konvertering
   st: 1,
   nypa: 1
 }
 
-// Avgör om två enheter är jämförbara
 function sameUnitType(unit1, unit2) {
   const volume = ["krm", "tsk", "msk", "dl", "l"]
   const weight = ["g", "kg"]
-  const piece = ["st", "nypa", "klyfta"]
+  const piece = ["st", "nypa"]
 
   if (volume.includes(unit1) && volume.includes(unit2)) return "volume"
   if (weight.includes(unit1) && weight.includes(unit2)) return "weight"
@@ -29,24 +24,16 @@ function sameUnitType(unit1, unit2) {
   return null
 }
 
-// Räkna ut hur mycket som saknas av en ingrediens
 function calculateMissing(needed, available) {
   const unitType = sameUnitType(needed.unit, available.unit)
 
-  if (!unitType) {
-    // Enheter går inte att jämföra, visa som saknad
-    return needed
-  }
+  if (!unitType) return needed
 
   const neededInBase = needed.amount * (CONVERSIONS[needed.unit] || 1)
   const availableInBase = available.amount * (CONVERSIONS[available.unit] || 1)
 
-  if (availableInBase >= neededInBase) {
-    // Har tillräckligt
-    return null
-  }
+  if (availableInBase >= neededInBase) return null
 
-  // Räkna ut hur mycket som saknas i originalenheten
   const missingInBase = neededInBase - availableInBase
   const missingAmount = missingInBase / (CONVERSIONS[needed.unit] || 1)
 
@@ -66,18 +53,20 @@ function ShoppingList({ session }) {
   }, [])
 
   async function fetchData() {
-    // Hämta recept och kylinnehåll samtidigt
     const [recipesRes, fridgeRes] = await Promise.all([
       supabase.from("recipes").select("*, recipe_ingredients(*)").order("name"),
-      supabase.from("fridge").select("*")
+      // Hämta bara den inloggade användarens kyl
+      supabase.from("fridge").select("*").eq("user_id", session.user.id)
     ])
 
-    if (recipesRes.data) setRecipes(recipesRes.data)
+    if (recipesRes.data) {
+      setRecipes(recipesRes.data)
+      console.log("Recept:", recipesRes.data)
+    }
     if (fridgeRes.data) setFridgeItems(fridgeRes.data)
     setLoading(false)
   }
 
-  // Generera inköpslista baserat på valt recept
   function generateShoppingList(recipeId) {
     setSelectedRecipe(recipeId)
     setCheckedItems({})
@@ -92,28 +81,24 @@ function ShoppingList({ session }) {
 
     const missing = []
 
-    // Gå igenom varje ingrediens i receptet
     recipe.recipe_ingredients.forEach(needed => {
-      // Hitta matchande ingrediens i kylen (jämför namn)
       const available = fridgeItems.find(
         f => f.ingredient_name.toLowerCase() === needed.ingredient_name.toLowerCase()
       )
+      console.log(`Letar efter: ${needed.ingredient_name}, Hittade: ${available?.ingredient_name || "ingenting"}`)
 
       if (!available) {
-        // Ingrediensen finns inte alls i kylen
+        // Ingrediensen finns inte alls i användarens kyl
         missing.push(needed)
       } else if (needed.amount) {
-        // Ingrediensen finns men kanske inte tillräckligt
         const missingAmount = calculateMissing(needed, available)
         if (missingAmount) missing.push(missingAmount)
       }
-      // Om ingen mängd anges och ingrediensen finns – hoppa över
     })
 
     setShoppingList(missing)
   }
 
-  // Markera/avmarkera ett köpt föremål
   function toggleItem(id) {
     setCheckedItems(prev => ({ ...prev, [id]: !prev[id] }))
   }
@@ -124,7 +109,6 @@ function ShoppingList({ session }) {
     <div>
       <h2 style={{ marginBottom: "20px" }}>🛒 Inköpslista</h2>
 
-      {/* Välj recept */}
       <div className="card">
         <h3 style={{ marginBottom: "15px" }}>Välj recept</h3>
         <select
@@ -134,13 +118,12 @@ function ShoppingList({ session }) {
           <option value="">-- Välj ett recept --</option>
           {recipes.map(recipe => (
             <option key={recipe.id} value={recipe.id}>
-              {recipe.name}
+              {recipe.name} {recipe.user_id !== session.user.id ? "⭐ Delat" : ""}
             </option>
           ))}
         </select>
       </div>
 
-      {/* Visa inköpslistan */}
       {selectedRecipe && (
         <div className="card">
           <h3 style={{ marginBottom: "15px" }}>
@@ -165,7 +148,6 @@ function ShoppingList({ session }) {
                 color: checkedItems[item.id] ? "#999" : "#333"
               }}
             >
-              {/* Checkbox */}
               <div style={{
                 width: "22px",
                 height: "22px",

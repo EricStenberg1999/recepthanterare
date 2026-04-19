@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
-import { supabase } from "../supabase"
-import IngredientPicker from "./IngredientPicker"
+import { supabase } from "../../supabase"
+import IngredientPicker from "../Fridge/IngredientPicker"
 
 // Skapa eller redigera ett recept.
 // Props:

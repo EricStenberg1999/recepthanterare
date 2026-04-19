@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { supabase } from "../supabase"
+import { supabase } from "../../supabase"
 import RecipeForm from "./RecipeForm"
 import RecipeDetail from "./RecipeDetail"
 import RecipeListItem from "./RecipeListItem"

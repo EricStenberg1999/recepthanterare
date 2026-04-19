@@ -2,10 +2,10 @@ import { useState, useEffect } from "react"
 import "./App.css"
 import { supabase } from "./supabase"
 import Auth from "./components/Auth"
-import Fridge from "./components/Fridge"
-import Recipes from "./components/Recipes"
+import Fridge from "./components/Fridge/Fridge"
+import Recipes from "./components/Recipe/Recipes"
 import Suggestions from "./components/Suggestions"
-import ShoppingList from "./components/ShoppingList"
+import ShoppingList from "./components/ShoppingList/ShoppingList"
 
 function App() {
   const [activePage, setActivePage] = useState("fridge")

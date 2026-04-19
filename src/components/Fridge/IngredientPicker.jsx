@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react"
-import { supabase } from "../supabase"
-import { ALLOWED_INPUT_UNITS, toCanonical } from "../utils/units"
+import { supabase } from "../../supabase"
+import { ALLOWED_INPUT_UNITS, toCanonical } from "../../utils/units"
 
 const CATEGORIES = ["alla", "kyl", "frys", "skafferi"]
 const INITIAL_VISIBLE = 12

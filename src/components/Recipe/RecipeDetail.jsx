@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { supabase } from "../supabase"
+import { supabase } from "../../supabase"
 
 // Detaljvy för ett enskilt recept med portionsskalning och "laga recept"-funktion
 function RecipeDetail({

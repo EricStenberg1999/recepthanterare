@@ -33,6 +33,8 @@ function App() {
 
   if (loading) return <p style={{ padding: "20px" }}>Laddar...</p>
 
+if (loading) return <p style={{ padding: "20px" }}>Laddar...</p>
+
   // Visa inloggningssidan om användaren inte är inloggad
   if (!session) return <Auth />
 

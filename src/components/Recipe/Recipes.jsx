@@ -1,3 +1,4 @@
+import ImportRecipeModal from "./ImportRecipeModal"
 import { useState, useEffect } from "react"
 import { supabase } from "../../supabase"
 import RecipeForm from "./RecipeForm"
@@ -15,6 +16,7 @@ function Recipes({ session }) {
   const [view, setView] = useState("list")
   const [selectedRecipe, setSelectedRecipe] = useState(null)
   const [editingRecipe, setEditingRecipe] = useState(null)
+  const [showImport, setShowImport] = useState(false)
 
   useEffect(() => {
     fetchData()
@@ -225,15 +227,35 @@ function Recipes({ session }) {
       </div>
 
       {/* Nytt recept-knapp (bara på Mina) */}
-      {activeTab === "mine" && (
-        <button
-          className="primary"
-          style={{ marginBottom: "20px", width: "100%" }}
-          onClick={startNewRecipe}
-        >
-          + Lägg till recept
-        </button>
-      )}
+      {activeTab === "mine" && !showImport && (
+  <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
+    <button
+      className="primary"
+      onClick={startNewRecipe}
+      style={{ flex: 1 }}
+    >
+      + Nytt recept
+    </button>
+    <button
+      className="primary"
+      onClick={() => setShowImport(true)}
+      style={{ flex: 1 }}
+    >
+      🔗 Importera från URL
+    </button>
+  </div>
+)}
+
+{showImport && (
+  <ImportRecipeModal
+    session={session}
+    onDone={() => {
+      setShowImport(false)
+      fetchData()
+    }}
+    onCancel={() => setShowImport(false)}
+  />
+)}
 
       {/* Receptlista */}
       <div className="card">

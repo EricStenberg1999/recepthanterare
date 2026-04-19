@@ -40,18 +40,25 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
 
   // Callback från IngredientPicker när användaren valt en ingrediens
   function handlePickerSelect({ ingredient, amount, input_unit }) {
-    // Kolla om ingrediensen redan finns — om ja, addera mängden
-    const existingIndex = ingredients.findIndex(
-      i => i.ingredient.id === ingredient.id
-    )
+    // Använd functional setState för att garanterat läsa senaste värdet.
+    // Utan detta kunde snabba klick ge stale closures → dubletter i listan.
+    setIngredients(prev => {
+      const existingIndex = prev.findIndex(
+        i => i.ingredient.id === ingredient.id
+      )
 
-    if (existingIndex >= 0) {
-      const updated = [...ingredients]
-      updated[existingIndex].amount += amount
-      setIngredients(updated)
-    } else {
-      setIngredients([...ingredients, { ingredient, amount, input_unit }])
-    }
+      if (existingIndex >= 0) {
+        // Kopiera arrayen och uppdatera rätt post
+        const updated = [...prev]
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          amount: updated[existingIndex].amount + amount,
+        }
+        return updated
+      } else {
+        return [...prev, { ingredient, amount, input_unit }]
+      }
+    })
 
     // Lämnar pickern öppen så användaren kan lägga till flera i rad
   }

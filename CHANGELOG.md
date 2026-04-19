@@ -5,7 +5,7 @@ Alla större ändringar i recepthanteraren dokumenteras här.
 Formatet följer [Keep a Changelog](https://keepachangelog.com/),
 och projektet använder [Semantic Versioning](https://semver.org/).
 
-## [v1.1]
+## [v1.1] - 2026-04-18
 
 ### Added
 - Kategori-filter i matförrådet (Alla / Kyl / Frys / Skafferi) med antalsräknare

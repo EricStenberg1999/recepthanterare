@@ -121,12 +121,17 @@ function ShoppingList({ session }) {
     // 3. Beräkna skalning
     const scaleFactor = servings / (recipe.base_servings || 4)
 
-    // 4. För varje ingrediens i receptet: räkna ut vad som saknas
-    // Viktigt: vi drar bort BÅDE det som finns i förrådet OCH det som redan
-    // är planerat på inköpslistan. Annars räknas samma vara två gånger om
-    // man lägger till flera recept i rad utan att handla däremellan.
-    const toInsert = [] // Nya rader
-    const toUpdate = [] // Existerande rader som ska få ökad mängd
+    // 4. För varje ingrediens: räkna ut vad som saknas
+    // Vi använder upsert för att undvika unique constraint-fel om ingrediensen
+    // redan finns på listan (då adderas mängden till befintlig rad).
+    //
+    // KÄND BEGRÄNSNING: Flera recept med samma ingrediens räknas oberoende
+    // mot förrådet, vilket kan ge lägre total än behövs. Planerad fix i v1.2.
+    //
+    // Vi använder en Map för att slå ihop duplicerade ingredienser i samma
+    // recept — annars kraschar upsert eftersom den inte kan uppdatera samma
+    // (user_id, ingredient_id) två gånger i samma batch.
+    const upsertMap = new Map()
 
     for (const ing of recipe.recipe_ingredients) {
       const neededAmount = parseFloat(ing.amount) * scaleFactor
@@ -136,57 +141,57 @@ function ShoppingList({ session }) {
       const inFridge = fridgeItems.find(f => f.ingredient_id === ingredientId)
       const fridgeAmount = inFridge ? parseFloat(inFridge.amount) : 0
 
-      // Vad finns redan på inköpslistan? (räknas som "kommer att finnas")
+      // Vad finns redan på inköpslistan?
       const onList = existingListItems.find(
         e => e.ingredient_id === ingredientId
       )
       const listAmount = onList ? parseFloat(onList.amount) : 0
 
-      // Vad ska köpas = behov - (förråd + redan planerat på inköpslistan)
-      const toBuy = Math.max(0, neededAmount - fridgeAmount - listAmount)
+      // Vad ska köpas = behov - förråd (min 0)
+      const toBuy = Math.max(0, neededAmount - fridgeAmount)
 
-      if (toBuy <= 0) continue // Har nog (eller kommer att ha nog), hoppa över
+      if (toBuy <= 0) continue
 
-      // Finns den redan på inköpslistan? Då ökar vi mängden
-      if (onList) {
-        toUpdate.push({
-          id: onList.id,
-          newAmount: Math.round((listAmount + toBuy) * 10) / 10,
-        })
+      // Om ingrediensen redan finns i vår map (dubblett i samma recept),
+      // addera mängden istället för att skriva över
+      const existing = upsertMap.get(ingredientId)
+      if (existing) {
+        existing.amount = Math.round((existing.amount + toBuy) * 10) / 10
       } else {
-        toInsert.push({
+        // Ny rad = befintlig mängd på listan + det vi lägger till
+        const finalAmount = Math.round((listAmount + toBuy) * 10) / 10
+        upsertMap.set(ingredientId, {
           user_id: session.user.id,
           ingredient_id: ingredientId,
-          amount: Math.round(toBuy * 10) / 10,
+          amount: finalAmount,
         })
       }
     }
 
-    // 5. Kör databasoperationerna
-    if (toInsert.length > 0) {
-      const { error } = await supabase.from("shopping_list").insert(toInsert)
+    const upsertRows = Array.from(upsertMap.values())
+
+    // 5. Upsert — uppdaterar om unique (user_id, ingredient_id) finns, annars insert
+    let addedCount = 0
+    if (upsertRows.length > 0) {
+      const { error } = await supabase
+        .from("shopping_list")
+        .upsert(upsertRows, { onConflict: "user_id,ingredient_id" })
+
       if (error) {
         alert("Fel vid tillägg: " + error.message)
         return
       }
-    }
-
-    for (const upd of toUpdate) {
-      await supabase
-        .from("shopping_list")
-        .update({ amount: upd.newAmount })
-        .eq("id", upd.id)
+      addedCount = upsertRows.length
     }
 
     // 6. Sammanfattning till användaren
-    const totalAdded = toInsert.length + toUpdate.length
-    if (totalAdded === 0) {
+    if (addedCount === 0) {
       alert(
-        `Allt som behövs för ${recipe.name} (${servings} port.) finns redan i matförrådet eller på inköpslistan!`
+        `Allt som behövs för ${recipe.name} (${servings} port.) finns redan i matförrådet!`
       )
     } else {
       alert(
-        `${totalAdded} ${totalAdded === 1 ? "vara" : "varor"} tillagda från ${recipe.name} (${servings} port.)`
+        `${addedCount} ${addedCount === 1 ? "vara" : "varor"} tillagda från ${recipe.name} (${servings} port.)`
       )
     }
 

@@ -39,7 +39,7 @@ function App() {
   return (
     <div className="app">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-        <h1>🍳 Recepthanterare</h1>
+        <h1>👨‍🍳 Recepthanterare</h1>
         <button
           onClick={handleSignOut}
           style={{ background: "none", border: "1px solid #ddd", padding: "8px 12px", borderRadius: "8px", cursor: "pointer", color: "#666" }}
@@ -54,7 +54,7 @@ function App() {
           className={activePage === "fridge" ? "active" : ""}
           onClick={() => setActivePage("fridge")}
         >
-          🧊 Kylen
+          🧺 Mitt Matförråd
         </button>
         <button
           className={activePage === "recipes" ? "active" : ""}

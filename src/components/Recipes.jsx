@@ -7,46 +7,59 @@ import RecipeListItem from "./RecipeListItem"
 function Recipes({ session }) {
   const [myRecipes, setMyRecipes] = useState([])
   const [sharedRecipes, setSharedRecipes] = useState([])
+  // Set av recipe_id:s som användaren favoritmarkerat — använder Set för snabba lookups
+  const [favoriteIds, setFavoriteIds] = useState(new Set())
   const [activeTab, setActiveTab] = useState("mine")
   const [loading, setLoading] = useState(true)
 
-  // Tre lägen: "list" (default), "detail", "form"
   const [view, setView] = useState("list")
   const [selectedRecipe, setSelectedRecipe] = useState(null)
   const [editingRecipe, setEditingRecipe] = useState(null)
 
   useEffect(() => {
-    fetchRecipes()
+    fetchData()
   }, [])
 
-  // Hämta recept med JOIN mot ingredients så vi får namn och enhet direkt
-  async function fetchRecipes() {
-    const { data, error } = await supabase
-      .from("recipes")
-      .select(`
-        *,
-        recipe_ingredients (
-          id,
-          amount,
-          input_unit,
-          ingredients (
+  // Hämta recept och favoriter parallellt
+  async function fetchData() {
+    const [recipesRes, favoritesRes] = await Promise.all([
+      supabase
+        .from("recipes")
+        .select(`
+          *,
+          recipe_ingredients (
             id,
-            name,
-            canonical_unit,
-            category
+            amount,
+            input_unit,
+            ingredients (
+              id,
+              name,
+              canonical_unit,
+              category
+            )
           )
-        )
-      `)
-      .order("name")
+        `)
+        .order("name"),
+      supabase.from("favorites").select("recipe_id"),
+    ])
 
-    if (error) {
-      console.error("Fel vid hämtning:", error)
+    if (recipesRes.error) {
+      console.error("Fel vid hämtning av recept:", recipesRes.error)
     } else {
-      setMyRecipes(data.filter(r => r.user_id === session.user.id))
+      setMyRecipes(recipesRes.data.filter(r => r.user_id === session.user.id))
       setSharedRecipes(
-        data.filter(r => r.is_shared && r.user_id !== session.user.id)
+        recipesRes.data.filter(
+          r => r.is_shared && r.user_id !== session.user.id
+        )
       )
     }
+
+    if (favoritesRes.error) {
+      console.error("Fel vid hämtning av favoriter:", favoritesRes.error)
+    } else {
+      setFavoriteIds(new Set(favoritesRes.data.map(f => f.recipe_id)))
+    }
+
     setLoading(false)
   }
 
@@ -72,9 +85,8 @@ function Recipes({ session }) {
     setView("form")
   }
 
-  // Efter sparning: stäng formuläret och ladda om listan
   async function handleSaved() {
-    await fetchRecipes()
+    await fetchData()
     backToList()
   }
 
@@ -84,7 +96,7 @@ function Recipes({ session }) {
       console.error("Fel vid borttagning:", error)
     } else {
       backToList()
-      fetchRecipes()
+      fetchData()
     }
   }
 
@@ -97,9 +109,45 @@ function Recipes({ session }) {
     if (error) {
       console.error("Fel vid delning:", error)
     } else {
-      // Uppdatera selectedRecipe lokalt så UI:t reagerar direkt
       setSelectedRecipe({ ...recipe, is_shared: !recipe.is_shared })
-      fetchRecipes()
+      fetchData()
+    }
+  }
+
+  // Växla favorit-status för ett recept
+  async function toggleFavorite(recipeId) {
+    const isFavorite = favoriteIds.has(recipeId)
+
+    if (isFavorite) {
+      // Ta bort favorit
+      const { error } = await supabase
+        .from("favorites")
+        .delete()
+        .eq("recipe_id", recipeId)
+        .eq("user_id", session.user.id)
+
+      if (error) {
+        console.error("Fel vid borttagning av favorit:", error)
+        return
+      }
+
+      // Uppdatera lokalt state — ta bort från Set
+      const newSet = new Set(favoriteIds)
+      newSet.delete(recipeId)
+      setFavoriteIds(newSet)
+    } else {
+      // Lägg till favorit
+      const { error } = await supabase
+        .from("favorites")
+        .insert([{ recipe_id: recipeId, user_id: session.user.id }])
+
+      if (error) {
+        console.error("Fel vid sparande av favorit:", error)
+        return
+      }
+
+      // Uppdatera lokalt state — lägg till i Set
+      setFavoriteIds(new Set([...favoriteIds, recipeId]))
     }
   }
 
@@ -111,15 +159,17 @@ function Recipes({ session }) {
       <RecipeDetail
         recipe={selectedRecipe}
         isOwner={selectedRecipe.user_id === session.user.id}
+        isFavorite={favoriteIds.has(selectedRecipe.id)}
         onBack={backToList}
         onEdit={() => startEditing(selectedRecipe)}
         onDelete={() => deleteRecipe(selectedRecipe.id)}
         onToggleShare={() => toggleShare(selectedRecipe)}
+        onToggleFavorite={() => toggleFavorite(selectedRecipe.id)}
       />
     )
   }
 
-  // --- VY: Formulär (nytt eller redigering) ---
+  // --- VY: Formulär ---
   if (view === "form") {
     return (
       <RecipeForm
@@ -132,27 +182,45 @@ function Recipes({ session }) {
   }
 
   // --- VY: Lista ---
-  const displayedRecipes = activeTab === "mine" ? myRecipes : sharedRecipes
+  // Favoriter-tabben visar BÅDE egna och delade favoritmarkerade recept
+  let displayedRecipes
+  if (activeTab === "mine") {
+    displayedRecipes = myRecipes
+  } else if (activeTab === "shared") {
+    displayedRecipes = sharedRecipes
+  } else {
+    // favorites
+    displayedRecipes = [...myRecipes, ...sharedRecipes].filter(r =>
+      favoriteIds.has(r.id)
+    )
+  }
 
   return (
     <div>
       <h2 style={{ marginBottom: "20px" }}>📖 Recept</h2>
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
+      <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
         <button
           onClick={() => setActiveTab("mine")}
           className={activeTab === "mine" ? "primary" : ""}
           style={{ flex: 1 }}
         >
-          Mina recept ({myRecipes.length})
+          Mina ({myRecipes.length})
         </button>
         <button
           onClick={() => setActiveTab("shared")}
           className={activeTab === "shared" ? "primary" : ""}
           style={{ flex: 1 }}
         >
-          Delade recept ({sharedRecipes.length})
+          Delade ({sharedRecipes.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("favorites")}
+          className={activeTab === "favorites" ? "primary" : ""}
+          style={{ flex: 1 }}
+        >
+          ❤️ ({favoriteIds.size})
         </button>
       </div>
 
@@ -173,14 +241,18 @@ function Recipes({ session }) {
           <p style={{ color: "#999" }}>
             {activeTab === "mine"
               ? "Inga recept än – lägg till ditt första!"
-              : "Inga delade recept än!"}
+              : activeTab === "shared"
+              ? "Inga delade recept än!"
+              : "Inga favoriter än – tryck på hjärtat på ett recept!"}
           </p>
         ) : (
           displayedRecipes.map(recipe => (
             <RecipeListItem
               key={recipe.id}
               recipe={recipe}
+              isFavorite={favoriteIds.has(recipe.id)}
               onClick={() => openRecipe(recipe)}
+              onToggleFavorite={() => toggleFavorite(recipe.id)}
             />
           ))
         )}

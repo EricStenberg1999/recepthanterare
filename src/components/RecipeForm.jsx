@@ -11,6 +11,7 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [instructions, setInstructions] = useState("")
+  const [baseServings, setBaseServings] = useState(4)
 
   // Lokal lista av valda ingredienser innan sparning
   // Varje post: { ingredient: {id, name, canonical_unit}, amount, input_unit }
@@ -25,6 +26,7 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
       setName(editingRecipe.name)
       setDescription(editingRecipe.description || "")
       setInstructions(editingRecipe.instructions || "")
+      setBaseServings(editingRecipe.base_servings || 4)
 
       // Mappa om database-formatet till samma struktur som IngredientPicker ger oss
       const existingIngredients = editingRecipe.recipe_ingredients.map(ri => ({
@@ -72,6 +74,7 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
           name: name.trim(),
           description: description.trim(),
           instructions: instructions.trim(),
+          base_servings: baseServings,
         })
         .eq("id", editingRecipe.id)
 
@@ -104,6 +107,7 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
             source: "own",
             user_id: session.user.id,
             is_shared: false,
+            base_servings: baseServings,
           },
         ])
         .select()
@@ -169,6 +173,28 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
           value={description}
           onChange={e => setDescription(e.target.value)}
         />
+
+        {/* Antal portioner — används senare för skalning och "laga recept"-knapp */}
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", margin: "15px 0 10px" }}>
+          <label style={{ fontWeight: "bold" }}>Antal portioner:</label>
+          <button
+            onClick={() => setBaseServings(Math.max(1, baseServings - 1))}
+            style={{ padding: "4px 12px" }}
+            disabled={baseServings <= 1}
+          >
+            −
+          </button>
+          <span style={{ minWidth: "30px", textAlign: "center", fontWeight: "bold" }}>
+            {baseServings}
+          </span>
+          <button
+            onClick={() => setBaseServings(Math.min(12, baseServings + 1))}
+            style={{ padding: "4px 12px" }}
+            disabled={baseServings >= 12}
+          >
+            +
+          </button>
+        </div>
 
         <h4 style={{ margin: "15px 0 10px" }}>
           Ingredienser ({ingredients.length})

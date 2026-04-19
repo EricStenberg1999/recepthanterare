@@ -2,10 +2,13 @@ import { useState, useEffect } from "react"
 import { supabase } from "../supabase"
 import IngredientPicker from "./IngredientPicker"
 
+const CATEGORIES = ["alla", "kyl", "frys", "skafferi"]
+
 function Fridge({ session }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("innehåll")
+  const [categoryFilter, setCategoryFilter] = useState("alla")
 
   useEffect(() => {
     fetchItems()
@@ -81,18 +84,30 @@ function Fridge({ session }) {
 
   if (loading) return <p>Laddar...</p>
 
+  // Filtrera listan baserat på valt kategori-filter
+  const filteredItems =
+    categoryFilter === "alla"
+      ? items
+      : items.filter(item => item.ingredients.category === categoryFilter)
+
+  // Räknare för varje kategori (visas i filter-knapparna)
+  const countFor = cat =>
+    cat === "alla"
+      ? items.length
+      : items.filter(i => i.ingredients.category === cat).length
+
   return (
     <div>
-      <h2 style={{ marginBottom: "20px" }}>🧊 Mitt kylskåp</h2>
+      <h2 style={{ marginBottom: "20px" }}>🧺 Mitt Matförråd</h2>
 
-      {/* Tabs */}
+      {/* Huvudflikar */}
       <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
         <button
           onClick={() => setActiveTab("innehåll")}
           className={activeTab === "innehåll" ? "primary" : ""}
           style={{ flex: 1 }}
         >
-          I kylen ({items.length})
+          Innehåll ({items.length})
         </button>
         <button
           onClick={() => setActiveTab("lägg-till")}
@@ -103,41 +118,68 @@ function Fridge({ session }) {
         </button>
       </div>
 
-      {/* Vyn beror på aktiv tab */}
       {activeTab === "lägg-till" ? (
         <IngredientPicker onSelect={handleAdd} />
       ) : (
-        <div className="card">
-          {items.length === 0 ? (
-            <p style={{ color: "#999" }}>
-              Kylen är tom – gå till "Lägg till" för att börja fylla på!
-            </p>
-          ) : (
-            items.map(item => (
-              <div
-                key={item.id}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  padding: "10px 0",
-                  borderBottom: "1px solid #f0f0f0",
-                }}
+        <>
+          {/* Kategori-filter */}
+          <div
+            style={{
+              display: "flex",
+              gap: "8px",
+              marginBottom: "15px",
+              flexWrap: "wrap",
+            }}
+          >
+            {CATEGORIES.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setCategoryFilter(cat)}
+                className={categoryFilter === cat ? "primary" : ""}
+                style={{ flex: 1, textTransform: "capitalize" }}
               >
-                <span>
-                  <span style={{ textTransform: "capitalize" }}>
-                    {item.ingredients.name}
+                {cat} ({countFor(cat)})
+              </button>
+            ))}
+          </div>
+
+          <div className="card">
+            {filteredItems.length === 0 ? (
+              <p style={{ color: "#999" }}>
+                {items.length === 0
+                  ? 'Matförrådet är tomt – gå till "Lägg till" för att börja fylla på!'
+                  : `Inget i kategorin "${categoryFilter}" just nu.`}
+              </p>
+            ) : (
+              filteredItems.map(item => (
+                <div
+                  key={item.id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "10px 0",
+                    borderBottom: "1px solid #f0f0f0",
+                  }}
+                >
+                  <span>
+                    <span style={{ textTransform: "capitalize" }}>
+                      {item.ingredients.name}
+                    </span>
+                    {" – "}
+                    {item.amount} {item.ingredients.canonical_unit}
                   </span>
-                  {" – "}
-                  {item.amount} {item.ingredients.canonical_unit}
-                </span>
-                <button className="danger" onClick={() => deleteItem(item.id)}>
-                  Ta bort
-                </button>
-              </div>
-            ))
-          )}
-        </div>
+                  <button
+                    className="danger"
+                    onClick={() => deleteItem(item.id)}
+                  >
+                    Ta bort
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </>
       )}
     </div>
   )

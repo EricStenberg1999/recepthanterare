@@ -1,6 +1,11 @@
-// En klickbar rad i receptlistan.
-// Håller sig enkel — bara presentation, ingen data-logik.
-function RecipeListItem({ recipe, onClick }) {
+// En klickbar rad i receptlistan med favorit-knapp.
+function RecipeListItem({ recipe, isFavorite, onClick, onToggleFavorite }) {
+  // Stoppa klick-propagering så favorit-knappen inte öppnar detaljvyn
+  function handleFavoriteClick(e) {
+    e.stopPropagation()
+    onToggleFavorite()
+  }
+
   return (
     <div
       onClick={onClick}
@@ -11,9 +16,10 @@ function RecipeListItem({ recipe, onClick }) {
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
+        gap: "12px",
       }}
     >
-      <div>
+      <div style={{ flex: 1 }}>
         <strong>{recipe.name}</strong>
         {recipe.is_shared && (
           <span
@@ -38,6 +44,23 @@ function RecipeListItem({ recipe, onClick }) {
           </p>
         )}
       </div>
+
+      {/* Favoritknapp — stoppar propagation så att klick på hjärtat inte öppnar detaljvyn */}
+      <button
+        onClick={handleFavoriteClick}
+        aria-label={isFavorite ? "Ta bort från favoriter" : "Lägg till i favoriter"}
+        style={{
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          fontSize: "22px",
+          padding: "4px 8px",
+          lineHeight: 1,
+        }}
+      >
+        {isFavorite ? "❤️" : "🤍"}
+      </button>
+
       <span style={{ color: "#ccc" }}>→</span>
     </div>
   )

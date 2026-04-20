@@ -39,6 +39,7 @@ function ImportRecipeModal({ session, onDone, onCancel }) {
         body: JSON.stringify({
           url: url.trim(),
           ingredientsList: ingredients,
+          userId: session.user.id,
         }),
       })
 
@@ -82,11 +83,12 @@ function ImportRecipeModal({ session, onDone, onCancel }) {
         const matched = ingredients.find(
           i => i.name.toLowerCase() === ing.name.toLowerCase()
         )
-        if (matched && ing.amount) {
+        if (matched) {
           rows.push({
             recipe_id: recipeId,
             ingredient_id: matched.id,
-            amount: ing.amount,
+            // Tillåt null-amount för "smör till formen" etc.
+            amount: ing.amount !== null && ing.amount !== undefined ? ing.amount : null,
             input_unit: ing.unit || matched.canonical_unit,
           })
         }

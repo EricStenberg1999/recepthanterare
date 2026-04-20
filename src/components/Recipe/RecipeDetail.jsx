@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { supabase } from "../../supabase"
+import { fromCanonical } from "../../utils/units"
 
 // Detaljvy för ett enskilt recept med portionsskalning och "laga recept"-funktion
 function RecipeDetail({
@@ -18,12 +19,15 @@ function RecipeDetail({
   const baseServings = recipe.base_servings || 4
   const [servings, setServings] = useState(baseServings)
 
-  // Hjälpfunktion: skala en mängd baserat på valda vs. bas-portioner
-  // Ex: bas 4, vald 6, ingrediens 200 g → 200 * 6/4 = 300 g
-  function scaleAmount(amount) {
-    const scaled = (parseFloat(amount) * servings) / baseServings
-    // Avrunda till 1 decimal
-    return Math.round(scaled * 10) / 10
+  // Hjälpfunktion: skala en canonical-mängd och konvertera till display-enhet
+  function displayAmount(canonicalAmount, inputUnit, canonicalUnit) {
+    const scaledCanonical = (parseFloat(canonicalAmount) * servings) / baseServings
+    // Konvertera till display-enhet (t.ex. 0.025 dl → 0.5 tsk)
+    if (inputUnit && inputUnit !== canonicalUnit) {
+      return fromCanonical(scaledCanonical, inputUnit, canonicalUnit)
+    }
+    // Om ingen input_unit eller samma som canonical — avrunda till 1 decimal
+    return Math.round(scaledCanonical * 10) / 10
   }
 
   // Hanterar "Laga recept"-knappen
@@ -100,6 +104,106 @@ function RecipeDetail({
 
     alert(`Klart! ${recipe.name} är tillagat och matförrådet är uppdaterat.`)
     if (onCooked) onCooked()
+  }
+
+  // Lägg till receptets saknade ingredienser på inköpslistan
+  // 1. Hämta förrådet
+  // 2. För varje ingrediens: beräkna hur mycket som saknas (skalat efter portioner)
+  // 3. Upsert:a på shopping_list — om ingrediensen redan finns, addera mängden
+  async function handleAddToShoppingList() {
+    // Hämta förrådet (RLS filtrerar per användare)
+    const { data: fridgeItems, error: fetchError } = await supabase
+      .from("fridge")
+      .select("amount, ingredients ( id )")
+
+    if (fetchError) {
+      alert("Kunde inte hämta matförrådet: " + fetchError.message)
+      return
+    }
+
+    // Hämta befintlig inköpslista så vi kan kombinera mängder
+    const { data: listItems, error: listError } = await supabase
+      .from("shopping_list")
+      .select("id, ingredient_id, amount")
+
+    if (listError) {
+      alert("Kunde inte hämta inköpslistan: " + listError.message)
+      return
+    }
+
+    // Räkna ut vad som saknas för varje receptingrediens
+    const toAdd = [] // { ingredient_id, amount } för nya rader
+    const toUpdate = [] // { id, newAmount } för befintliga rader som ska adderas till
+
+    for (const ing of recipe.recipe_ingredients) {
+      const needed = scaleAmount(ing.amount)
+      const inFridge = fridgeItems.find(
+        f => f.ingredients.id === ing.ingredients.id
+      )
+      const available = inFridge ? parseFloat(inFridge.amount) : 0
+      const missing = needed - available
+
+      if (missing <= 0) continue // Har tillräckligt — hoppa över
+
+      // Kolla om varan redan finns på inköpslistan
+      const existing = listItems.find(
+        l => l.ingredient_id === ing.ingredients.id
+      )
+
+      if (existing) {
+        toUpdate.push({
+          id: existing.id,
+          newAmount: Math.round((parseFloat(existing.amount) + missing) * 10) / 10,
+        })
+      } else {
+        toAdd.push({
+          user_id: recipe.user_id, // Används för RLS — men vi sätter egen user_id nedan
+          ingredient_id: ing.ingredients.id,
+          amount: Math.round(missing * 10) / 10,
+        })
+      }
+    }
+
+    // Om inget behövde läggas till — inga saknade ingredienser
+    if (toAdd.length === 0 && toUpdate.length === 0) {
+      alert("Du har redan allt du behöver för det här receptet! 🎉")
+      return
+    }
+
+    // Hämta användarens session för att sätta user_id på nya rader
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    const userId = session.user.id
+
+    // Sätt rätt user_id på nya rader
+    const rowsToInsert = toAdd.map(row => ({ ...row, user_id: userId }))
+
+    // Kör alla databas-operationer
+    if (rowsToInsert.length > 0) {
+      const { error } = await supabase.from("shopping_list").insert(rowsToInsert)
+      if (error) {
+        alert("Kunde inte lägga till varor: " + error.message)
+        return
+      }
+    }
+
+    for (const update of toUpdate) {
+      const { error } = await supabase
+        .from("shopping_list")
+        .update({ amount: update.newAmount })
+        .eq("id", update.id)
+      if (error) {
+        console.error("Fel vid uppdatering av befintlig rad:", error)
+      }
+    }
+
+    const totalCount = toAdd.length + toUpdate.length
+    alert(
+      `${totalCount} ${totalCount === 1 ? "vara" : "varor"} tillagd${
+        totalCount === 1 ? "" : "a"
+      } på inköpslistan!`
+    )
   }
 
   return (
@@ -240,7 +344,7 @@ function RecipeDetail({
               {ing.ingredients.name}
             </span>
             {ing.amount &&
-              ` – ${scaleAmount(ing.amount)} ${ing.ingredients.canonical_unit}`}
+              ` – ${displayAmount(ing.amount, ing.input_unit, ing.ingredients.canonical_unit)} ${ing.input_unit || ing.ingredients.canonical_unit}`}
           </div>
         ))}
 

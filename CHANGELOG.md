@@ -5,7 +5,22 @@ Alla större ändringar i recepthanteraren dokumenteras här.
 Formatet följer [Keep a Changelog](https://keepachangelog.com/),
 och projektet använder [Semantic Versioning](https://semver.org/).
 
-## [v1.1] - 2026-04-18
+## [1.2.0] - 2026-04-20
+
+### Added
+- Importera recept från URL via AI (Anthropic Claude Haiku 4.5)
+- Vercel Serverless backend (`/api/import-recipe`) för säker API-nyckelhantering
+
+### Changed
+- Komponenter omorganiserade i mappar (Fridge/, Recipe/, ShoppingList/)
+- ShoppingList uppdelad i fyra separata komponenter (ShoppingList, ShoppingListRow
+
+## [1.1.1] - 2026-04-19
+
+### Fixed
+- Egna recept läggs till korrekt i inköpslistan 
+
+## [1.1.0] - 2026-04-18
 
 ### Added
 - Kategori-filter i matförrådet (Alla / Kyl / Frys / Skafferi) med antalsräknare
@@ -22,7 +37,7 @@ och projektet använder [Semantic Versioning](https://semver.org/).
 - Kombinering: samma ingrediens från olika recept adderas till en rad
 - "Handlat klart"-knapp som kan flytta avbockade varor direkt till Matförrådet
 
-## Changed
+### Changed
 - Bytt namn från "Kylen" till "Mitt Matförråd"
 - Bytt emoji från 🧊 till 🧺 för att bättre representera kyl, frys och skafferi
 - Flik-namn förkortade till "Mina" / "Delade" för att ge plats åt favoriter-tabben

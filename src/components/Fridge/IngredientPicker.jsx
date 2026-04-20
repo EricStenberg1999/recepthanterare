@@ -16,6 +16,13 @@ function IngredientPicker({ onSelect, onCancel, cancelLabel = "Avbryt" }) {
   const [amount, setAmount] = useState("")
   const [inputUnit, setInputUnit] = useState("")
 
+  // Skapa-ny-ingrediens state
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [newName, setNewName] = useState("")
+  const [newCategory, setNewCategory] = useState("kyl")
+  const [newUnit, setNewUnit] = useState("g")
+  const [newUnitType, setNewUnitType] = useState("weight")
+
   useEffect(() => {
     async function fetchIngredients() {
       const { data, error } = await supabase
@@ -37,6 +44,70 @@ function IngredientPicker({ onSelect, onCancel, cancelLabel = "Avbryt" }) {
     setSelected(ingredient)
     setInputUnit(ingredient.canonical_unit)
     setAmount("")
+  }
+
+  // Starta skapa-ny-formuläret med söktexten som default-namn
+  function openCreateForm() {
+    setNewName(search.trim())
+    setShowCreateForm(true)
+  }
+
+  // Skapa ny ingrediens i master-listan, lägg till i local state,
+  // och välj den direkt så användaren kan ange mängd
+  async function handleCreateNew() {
+    const trimmedName = newName.toLowerCase().trim()
+    if (!trimmedName) {
+      alert("Ange ett namn")
+      return
+    }
+
+    // Kolla om den redan finns (case-insensitive)
+    const existing = ingredients.find(
+      i => i.name.toLowerCase() === trimmedName
+    )
+    if (existing) {
+      alert(`"${trimmedName}" finns redan i listan — välj den istället.`)
+      setShowCreateForm(false)
+      return
+    }
+
+    const { data, error } = await supabase
+      .from("ingredients")
+      .insert([
+        {
+          name: trimmedName,
+          canonical_unit: newUnit,
+          unit_type: newUnitType,
+          category: newCategory,
+        },
+      ])
+      .select()
+
+    if (error) {
+      alert("Fel vid skapande: " + error.message)
+      return
+    }
+
+    const newIngredient = data[0]
+
+    // Lägg till i local state så den visas direkt
+    setIngredients([...ingredients, newIngredient].sort((a, b) =>
+      a.name.localeCompare(b.name)
+    ))
+
+    // Stäng formuläret, välj direkt så användaren kan ange mängd
+    setShowCreateForm(false)
+    setNewName("")
+    setSearch("")
+    handleSelect(newIngredient)
+  }
+
+  // När unit_type ändras, sätt default-unit till den första giltiga
+  function handleUnitTypeChange(type) {
+    setNewUnitType(type)
+    if (type === "weight") setNewUnit("g")
+    else if (type === "volume") setNewUnit("dl")
+    else setNewUnit("st")
   }
 
   function handleConfirm() {
@@ -95,6 +166,90 @@ function IngredientPicker({ onSelect, onCancel, cancelLabel = "Avbryt" }) {
   const canCollapse = !isSearching && showAll && filtered.length > INITIAL_VISIBLE
 
   if (loading) return <p>Laddar ingredienser...</p>
+
+  // --- VY 3: Skapa ny ingrediens ---
+  if (showCreateForm) {
+    return (
+      <div className="card">
+        <h3 style={{ marginBottom: "15px" }}>Skapa ny ingrediens</h3>
+
+        <label style={{ fontSize: "14px", color: "#666" }}>Namn</label>
+        <input
+          type="text"
+          placeholder="Ingrediens (lowercase)"
+          value={newName}
+          onChange={e => setNewName(e.target.value)}
+          autoFocus
+        />
+
+        <label style={{ fontSize: "14px", color: "#666" }}>
+          Förvaras i
+        </label>
+        <select
+          value={newCategory}
+          onChange={e => setNewCategory(e.target.value)}
+        >
+          <option value="kyl">Kyl</option>
+          <option value="frys">Frys</option>
+          <option value="skafferi">Skafferi</option>
+        </select>
+
+        <label style={{ fontSize: "14px", color: "#666", marginTop: "10px" }}>
+          Mäts i
+        </label>
+        <select
+          value={newUnitType}
+          onChange={e => handleUnitTypeChange(e.target.value)}
+        >
+          <option value="weight">Vikt (g, kg)</option>
+          <option value="volume">Volym (dl, l, msk)</option>
+          <option value="count">Antal (st)</option>
+        </select>
+
+        <label style={{ fontSize: "14px", color: "#666", marginTop: "10px" }}>
+          Standardenhet
+        </label>
+        <select
+          value={newUnit}
+          onChange={e => setNewUnit(e.target.value)}
+        >
+          {newUnitType === "weight" && (
+            <>
+              <option value="g">gram (g)</option>
+              <option value="kg">kilogram (kg)</option>
+            </>
+          )}
+          {newUnitType === "volume" && (
+            <>
+              <option value="dl">deciliter (dl)</option>
+              <option value="l">liter (l)</option>
+              <option value="ml">milliliter (ml)</option>
+            </>
+          )}
+          {newUnitType === "count" && <option value="st">styck (st)</option>}
+        </select>
+
+        <div style={{ display: "flex", gap: "10px", marginTop: "15px" }}>
+          <button
+            onClick={() => {
+              setShowCreateForm(false)
+              setNewName("")
+            }}
+            style={{ flex: 1 }}
+          >
+            Avbryt
+          </button>
+          <button
+            className="primary"
+            onClick={handleCreateNew}
+            style={{ flex: 1 }}
+          >
+            Skapa
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   // --- VY 2: Mängd- och enhetsformulär ---
   if (selected) {
@@ -218,9 +373,20 @@ function IngredientPicker({ onSelect, onCancel, cancelLabel = "Avbryt" }) {
 
       {/* Grid */}
       {visible.length === 0 ? (
-        <p style={{ color: "#999", textAlign: "center" }}>
-          Inga ingredienser matchar.
-        </p>
+        <div style={{ textAlign: "center", padding: "10px 0" }}>
+          <p style={{ color: "#999", marginBottom: "10px" }}>
+            Inga ingredienser matchar.
+          </p>
+          {isSearching && (
+            <button
+              className="primary"
+              onClick={openCreateForm}
+              style={{ width: "100%" }}
+            >
+              + Skapa "{search.trim()}" som ny ingrediens
+            </button>
+          )}
+        </div>
       ) : (
         <div
           style={{

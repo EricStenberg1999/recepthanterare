@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
 import { supabase } from "../../supabase"
+import { fromCanonical } from "../../utils/units"
 import IngredientPicker from "../Fridge/IngredientPicker"
 
 // Skapa eller redigera ett recept.
@@ -226,7 +227,7 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
                     {ing.ingredient.name}
                   </span>
                   {" – "}
-                  {ing.amount} {ing.ingredient.canonical_unit}
+                  {fromCanonical(ing.amount, ing.input_unit, ing.ingredient.canonical_unit)} {ing.input_unit}
                 </span>
                 <button
                   className="danger"

@@ -37,7 +37,20 @@ export function toCanonical(amount, inputUnit, canonicalUnit) {
   const factor = UNIT_CONVERSIONS[canonicalUnit]?.[inputUnit]
   if (factor === undefined) {
     console.error(`Ingen konvertering: ${inputUnit} → ${canonicalUnit}`)
-    return amount // Fallback: anta att de är samma
+    return amount
   }
   return amount * factor
+}
+
+// Konvertera från canonical till display-enhet.
+// Ex: fromCanonical(0.01, "krm", "dl") → 1 (visar 0.01 dl som 1 krm)
+// Används vid visning av ingredienser sparade i canonical men angivna i annan enhet.
+export function fromCanonical(canonicalAmount, displayUnit, canonicalUnit) {
+  const factor = UNIT_CONVERSIONS[canonicalUnit]?.[displayUnit]
+  if (factor === undefined || factor === 0) {
+    console.error(`Ingen konvertering: ${canonicalUnit} → ${displayUnit}`)
+    return canonicalAmount
+  }
+  // Avrunda till 2 decimaler för att undvika flyttalsrestar
+  return Math.round((canonicalAmount / factor) * 100) / 100
 }

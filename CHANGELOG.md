@@ -5,6 +5,31 @@ Alla större ändringar i recepthanteraren dokumenteras här.
 Formatet följer [Keep a Changelog](https://keepachangelog.com/),
 och projektet använder [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [1.3.0] - 2026-04-21
+
+### Added
+- Rate limiting på `/api/import-recipe`: 30 imports/timme globalt, 10/dag per användare
+- "Skapa ny ingrediens"-knapp i IngredientPicker när sökning ger 0 träffar — användare kan lägga till nya ingredienser direkt
+- `fromCanonical()` i `utils/units.js` för att konvertera canonical-mängder tillbaka till display-enhet
+- Nya ingredienser i master-listan: vispgrädde, matlagningsgrädde, ströbröd, florsocker, färska blåbär, färska hallon, färska jordgubbar
+- Stöd för ingredienser utan mängd (t.ex. "smör till formen") i recept
+
+### Changed
+- URL-import-prompten förbättrad markant:
+  - AI behåller nu originalenheter från receptet (1.5 dl, inte 1.5 g)
+  - Smartare portionsuppskattning ("8 bitar" tolkas som ~4 portioner)
+  - Inkluderar ingredienser utan specifik mängd
+  - Bättre intelligent matchning (vispgrädde, färska bär etc.)
+- Recept visar nu `input_unit` istället för `canonical_unit` — "0.5 tsk chilipeppar" visas som "0.5 tsk", inte "0.025 dl"
+
+### Fixed
+- Unique-constraint på `recipe_ingredients` borttaget — samma ingrediens kan nu legitimt finnas flera gånger i ett recept (t.ex. smör i smet + smör till formen)
+
+### Security
+- Anthropic API-nyckel roterad proaktivt efter Vercel-incidenten april 2026 (alla kritiska env vars var redan markerade "sensitive" och oberörda)
+
 ## [1.2.0] - 2026-04-20
 
 ### Added
@@ -13,7 +38,7 @@ och projektet använder [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - Komponenter omorganiserade i mappar (Fridge/, Recipe/, ShoppingList/)
-- ShoppingList uppdelad i fyra separata komponenter (ShoppingList, ShoppingListRow
+- ShoppingList uppdelad i fyra separata komponenter ShoppingList, ShoppingListRow
 
 ## [1.1.1] - 2026-04-19
 

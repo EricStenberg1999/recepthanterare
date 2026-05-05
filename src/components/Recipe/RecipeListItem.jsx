@@ -1,4 +1,4 @@
-// En klickbar rad i receptlistan med favorit-knapp.
+// En klickbar rad i receptlistan med thumbnail, namn, beskrivning och favorit-knapp.
 function RecipeListItem({ recipe, isFavorite, onClick, onToggleFavorite }) {
   // Stoppa klick-propagering så favorit-knappen inte öppnar detaljvyn
   function handleFavoriteClick(e) {
@@ -10,16 +10,44 @@ function RecipeListItem({ recipe, isFavorite, onClick, onToggleFavorite }) {
     <div
       onClick={onClick}
       style={{
-        padding: "15px 0",
+        padding: "12px 0",
         borderBottom: "1px solid #f0f0f0",
         cursor: "pointer",
         display: "flex",
-        justifyContent: "space-between",
         alignItems: "center",
         gap: "12px",
       }}
     >
-      <div style={{ flex: 1 }}>
+      {/* Thumbnail eller placeholder */}
+      <div
+        style={{
+          width: "60px",
+          height: "60px",
+          borderRadius: "8px",
+          flexShrink: 0,
+          background: recipe.image_url ? "transparent" : "#f0f0f0",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          overflow: "hidden",
+        }}
+      >
+        {recipe.image_url ? (
+          <img
+            src={recipe.image_url}
+            alt={recipe.name}
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
+          />
+        ) : (
+          <span style={{ fontSize: "26px" }}>📖</span>
+        )}
+      </div>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
         <strong>{recipe.name}</strong>
         {recipe.is_shared && (
           <span
@@ -38,6 +66,9 @@ function RecipeListItem({ recipe, isFavorite, onClick, onToggleFavorite }) {
               color: "#666",
               fontSize: "13px",
               marginTop: "3px",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
             }}
           >
             {recipe.description}

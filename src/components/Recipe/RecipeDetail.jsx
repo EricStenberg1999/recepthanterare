@@ -19,6 +19,20 @@ function RecipeDetail({
   const baseServings = recipe.base_servings || 4
   const [servings, setServings] = useState(baseServings)
 
+  const [checkedSteps, setCheckedSteps] = useState(new Set())
+
+  function toggleStep(index) {
+    setCheckedSteps(prev => {
+      const next = new Set(prev)
+      if (next.has(index)) {
+        next.delete(index)
+      } else {
+        next.add(index)
+      }
+      return next
+    })
+  }
+
   // Hjälpfunktion: skala en canonical-mängd och konvertera till display-enhet
   function displayAmount(canonicalAmount, inputUnit, canonicalUnit) {
     const scaledCanonical = (parseFloat(canonicalAmount) * servings) / baseServings
@@ -28,6 +42,11 @@ function RecipeDetail({
     }
     // Om ingen input_unit eller samma som canonical — avrunda till 1 decimal
     return Math.round(scaledCanonical * 10) / 10
+  }
+
+  // Hjälpfunktion: skala en canonical-mängd för matchningslogik (förråd, inköpslista)
+  function scaleAmount(amount) {
+    return (parseFloat(amount) * servings) / baseServings
   }
 
   // Hanterar "Laga recept"-knappen
@@ -107,11 +126,7 @@ function RecipeDetail({
   }
 
   // Lägg till receptets saknade ingredienser på inköpslistan
-  // 1. Hämta förrådet
-  // 2. För varje ingrediens: beräkna hur mycket som saknas (skalat efter portioner)
-  // 3. Upsert:a på shopping_list — om ingrediensen redan finns, addera mängden
   async function handleAddToShoppingList() {
-    // Hämta förrådet (RLS filtrerar per användare)
     const { data: fridgeItems, error: fetchError } = await supabase
       .from("fridge")
       .select("amount, ingredients ( id )")
@@ -121,7 +136,6 @@ function RecipeDetail({
       return
     }
 
-    // Hämta befintlig inköpslista så vi kan kombinera mängder
     const { data: listItems, error: listError } = await supabase
       .from("shopping_list")
       .select("id, ingredient_id, amount")
@@ -131,9 +145,8 @@ function RecipeDetail({
       return
     }
 
-    // Räkna ut vad som saknas för varje receptingrediens
-    const toAdd = [] // { ingredient_id, amount } för nya rader
-    const toUpdate = [] // { id, newAmount } för befintliga rader som ska adderas till
+    const toAdd = []
+    const toUpdate = []
 
     for (const ing of recipe.recipe_ingredients) {
       const needed = scaleAmount(ing.amount)
@@ -143,9 +156,8 @@ function RecipeDetail({
       const available = inFridge ? parseFloat(inFridge.amount) : 0
       const missing = needed - available
 
-      if (missing <= 0) continue // Har tillräckligt — hoppa över
+      if (missing <= 0) continue
 
-      // Kolla om varan redan finns på inköpslistan
       const existing = listItems.find(
         l => l.ingredient_id === ing.ingredients.id
       )
@@ -157,29 +169,25 @@ function RecipeDetail({
         })
       } else {
         toAdd.push({
-          user_id: recipe.user_id, // Används för RLS — men vi sätter egen user_id nedan
+          user_id: recipe.user_id,
           ingredient_id: ing.ingredients.id,
           amount: Math.round(missing * 10) / 10,
         })
       }
     }
 
-    // Om inget behövde läggas till — inga saknade ingredienser
     if (toAdd.length === 0 && toUpdate.length === 0) {
       alert("Du har redan allt du behöver för det här receptet! 🎉")
       return
     }
 
-    // Hämta användarens session för att sätta user_id på nya rader
     const {
       data: { session },
     } = await supabase.auth.getSession()
     const userId = session.user.id
 
-    // Sätt rätt user_id på nya rader
     const rowsToInsert = toAdd.map(row => ({ ...row, user_id: userId }))
 
-    // Kör alla databas-operationer
     if (rowsToInsert.length > 0) {
       const { error } = await supabase.from("shopping_list").insert(rowsToInsert)
       if (error) {
@@ -275,6 +283,22 @@ function RecipeDetail({
           </p>
         )}
 
+        {/* Receptbild om den finns */}
+        {recipe.image_url && (
+          <img
+            src={recipe.image_url}
+            alt={recipe.name}
+            style={{
+              maxWidth: "100%",
+              maxHeight: "300px",
+              borderRadius: "8px",
+              marginTop: "10px",
+              display: "block",
+              margin: "10px auto 0",
+            }}
+          />
+        )}
+
         {/* Portionsväljare */}
         <div
           style={{
@@ -349,15 +373,61 @@ function RecipeDetail({
         ))}
 
         {recipe.instructions && (
-          <>
-            <h3 style={{ marginTop: "20px", marginBottom: "10px" }}>
-              Instruktioner
-            </h3>
-            <p style={{ lineHeight: "1.6", whiteSpace: "pre-wrap" }}>
-              {recipe.instructions}
-            </p>
-          </>
-        )}
+  <>
+    <h3 style={{ marginTop: "20px", marginBottom: "10px" }}>
+      Instruktioner
+    </h3>
+    {recipe.instructions
+      .split("\n")
+      .filter(step => step.trim().length > 0)
+      .map((step, index) => {
+        const isChecked = checkedSteps.has(index)
+        return (
+          <div
+            key={index}
+            onClick={() => toggleStep(index)}
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "10px",
+              padding: "10px 0",
+              borderBottom: "1px solid #f0f0f0",
+              cursor: "pointer",
+            }}
+          >
+            <div
+              style={{
+                width: "22px",
+                height: "22px",
+                borderRadius: "50%",
+                border: `2px solid ${isChecked ? "#4CAF50" : "#ddd"}`,
+                background: isChecked ? "#4CAF50" : "white",
+                flexShrink: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "white",
+                fontSize: "12px",
+                marginTop: "2px",
+              }}
+            >
+              {isChecked && "✓"}
+            </div>
+            <span
+              style={{
+                flex: 1,
+                lineHeight: "1.6",
+                textDecoration: isChecked ? "line-through" : "none",
+                color: isChecked ? "#999" : "#333",
+              }}
+            >
+              {step}
+            </span>
+          </div>
+        )
+      })}
+  </>
+)}
 
         {/* Laga recept-knapp — synlig för alla (även delade recept) */}
         <button

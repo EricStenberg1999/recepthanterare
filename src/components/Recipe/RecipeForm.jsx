@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { supabase } from "../../supabase"
 import { fromCanonical } from "../../utils/units"
 import IngredientPicker from "../Fridge/IngredientPicker"
+import { compressImage } from "../../utils/images"
 
 // Skapa eller redigera ett recept.
 // Props:
@@ -13,6 +14,11 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
   const [description, setDescription] = useState("")
   const [instructions, setInstructions] = useState("")
   const [baseServings, setBaseServings] = useState(4)
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState(null)
+  const [imageUrl, setImageUrl] = useState(editingRecipe?.image_url || null)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   // Lokal lista av valda ingredienser innan sparning
   // Varje post: { ingredient: {id, name, canonical_unit}, amount, input_unit }
@@ -28,6 +34,7 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
       setDescription(editingRecipe.description || "")
       setInstructions(editingRecipe.instructions || "")
       setBaseServings(editingRecipe.base_servings || 4)
+      setImageUrl(editingRecipe.image_url || null)
 
       // Mappa om database-formatet till samma struktur som IngredientPicker ger oss
       const existingIngredients = editingRecipe.recipe_ingredients.map(ri => ({
@@ -41,15 +48,12 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
 
   // Callback från IngredientPicker när användaren valt en ingrediens
   function handlePickerSelect({ ingredient, amount, input_unit }) {
-    // Använd functional setState för att garanterat läsa senaste värdet.
-    // Utan detta kunde snabba klick ge stale closures → dubletter i listan.
     setIngredients(prev => {
       const existingIndex = prev.findIndex(
         i => i.ingredient.id === ingredient.id
       )
 
       if (existingIndex >= 0) {
-        // Kopiera arrayen och uppdatera rätt post
         const updated = [...prev]
         updated[existingIndex] = {
           ...updated[existingIndex],
@@ -60,12 +64,54 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
         return [...prev, { ingredient, amount, input_unit }]
       }
     })
+  }
 
-    // Lämnar pickern öppen så användaren kan lägga till flera i rad
+  async function handleImageChange(e) {
+    const file = e.target.files[0]
+    if (!file) return
+
+    try {
+      const compressed = await compressImage(file)
+      setImageFile(compressed)
+      setImagePreview(URL.createObjectURL(compressed))
+    } catch (err) {
+      alert("Fel vid bildhantering: " + err.message)
+    }
+  }
+
+  function removeImage() {
+    setImageFile(null)
+    setImagePreview(null)
+    setImageUrl(null)
   }
 
   function removeIngredient(index) {
     setIngredients(ingredients.filter((_, i) => i !== index))
+  }
+
+  // Ladda upp bilden om det finns en ny vald, returnera publik URL
+  async function uploadImageIfNeeded() {
+    if (!imageFile) return imageUrl // Behåll existerande URL eller null
+
+    setUploadingImage(true)
+    const fileName = `${session.user.id}/${Date.now()}.jpg`
+    const { error: uploadError } = await supabase.storage
+      .from("recipe-images")
+      .upload(fileName, imageFile, {
+        contentType: "image/jpeg",
+      })
+
+    if (uploadError) {
+      setUploadingImage(false)
+      throw new Error("Bilden kunde inte laddas upp: " + uploadError.message)
+    }
+
+    const { data: urlData } = supabase.storage
+      .from("recipe-images")
+      .getPublicUrl(fileName)
+
+    setUploadingImage(false)
+    return urlData.publicUrl
   }
 
   async function saveRecipe() {
@@ -74,61 +120,76 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
       return
     }
 
-    if (editingRecipe) {
-      // --- Uppdatera befintligt recept ---
-      const { error: recipeError } = await supabase
-        .from("recipes")
-        .update({
-          name: name.trim(),
-          description: description.trim(),
-          instructions: instructions.trim(),
-          base_servings: baseServings,
-        })
-        .eq("id", editingRecipe.id)
+    setSaving(true)
 
-      if (recipeError) {
-        console.error("Fel vid uppdatering av recept:", recipeError)
-        return
-      }
+    try {
+      // Ladda upp bild först (om en ny valts), så vi har URL till receptet
+      const finalImageUrl = await uploadImageIfNeeded()
 
-      // Enklast: ta bort alla gamla ingredienser och skriv om dem
-      const { error: deleteError } = await supabase
-        .from("recipe_ingredients")
-        .delete()
-        .eq("recipe_id", editingRecipe.id)
-
-      if (deleteError) {
-        console.error("Fel vid borttagning av gamla ingredienser:", deleteError)
-        return
-      }
-
-      await saveIngredients(editingRecipe.id)
-    } else {
-      // --- Skapa nytt recept ---
-      const { data: recipeData, error: recipeError } = await supabase
-        .from("recipes")
-        .insert([
-          {
+      if (editingRecipe) {
+        // --- Uppdatera befintligt recept ---
+        const { error: recipeError } = await supabase
+          .from("recipes")
+          .update({
             name: name.trim(),
             description: description.trim(),
             instructions: instructions.trim(),
-            source: "own",
-            user_id: session.user.id,
-            is_shared: false,
             base_servings: baseServings,
-          },
-        ])
-        .select()
+            image_url: finalImageUrl,
+          })
+          .eq("id", editingRecipe.id)
 
-      if (recipeError) {
-        console.error("Fel vid sparande av recept:", recipeError)
-        return
+        if (recipeError) {
+          console.error("Fel vid uppdatering av recept:", recipeError)
+          setSaving(false)
+          return
+        }
+
+        // Enklast: ta bort alla gamla ingredienser och skriv om dem
+        const { error: deleteError } = await supabase
+          .from("recipe_ingredients")
+          .delete()
+          .eq("recipe_id", editingRecipe.id)
+
+        if (deleteError) {
+          console.error("Fel vid borttagning av gamla ingredienser:", deleteError)
+          setSaving(false)
+          return
+        }
+
+        await saveIngredients(editingRecipe.id)
+      } else {
+        // --- Skapa nytt recept ---
+        const { data: recipeData, error: recipeError } = await supabase
+          .from("recipes")
+          .insert([
+            {
+              name: name.trim(),
+              description: description.trim(),
+              instructions: instructions.trim(),
+              source: "own",
+              user_id: session.user.id,
+              is_shared: false,
+              base_servings: baseServings,
+              image_url: finalImageUrl,
+            },
+          ])
+          .select()
+
+        if (recipeError) {
+          console.error("Fel vid sparande av recept:", recipeError)
+          setSaving(false)
+          return
+        }
+
+        await saveIngredients(recipeData[0].id)
       }
 
-      await saveIngredients(recipeData[0].id)
+      onSaved()
+    } catch (err) {
+      alert(err.message)
+      setSaving(false)
     }
-
-    onSaved()
   }
 
   // Hjälpfunktion: spara ingredienser till ett given recipe_id
@@ -182,7 +243,40 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
           onChange={e => setDescription(e.target.value)}
         />
 
-        {/* Antal portioner — används senare för skalning och "laga recept"-knapp */}
+        {/* Bilduppladdning */}
+        <label style={{ fontSize: "14px", color: "#666", display: "block", marginBottom: "5px" }}>
+          Bild (valfritt)
+        </label>
+        {imagePreview || imageUrl ? (
+          <div style={{ marginBottom: "15px" }}>
+            <img
+              src={imagePreview || imageUrl}
+              alt="Förhandsvisning"
+              style={{
+                maxWidth: "100%",
+                maxHeight: "200px",
+                borderRadius: "8px",
+                marginBottom: "5px",
+                display: "block",
+              }}
+            />
+            <button
+              onClick={removeImage}
+              style={{ width: "100%" }}
+            >
+              Ta bort bild
+            </button>
+          </div>
+        ) : (
+          <input
+            type="file"
+            accept="image/*"
+            onChange={handleImageChange}
+            style={{ marginBottom: "15px" }}
+          />
+        )}
+
+        {/* Antal portioner */}
         <div style={{ display: "flex", alignItems: "center", gap: "10px", margin: "15px 0 10px" }}>
           <label style={{ fontWeight: "bold" }}>Antal portioner:</label>
           <button
@@ -208,7 +302,6 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
           Ingredienser ({ingredients.length})
         </h4>
 
-        {/* Lista över valda ingredienser */}
         {ingredients.length > 0 && (
           <div style={{ marginBottom: "15px" }}>
             {ingredients.map((ing, index) => (
@@ -241,7 +334,6 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
           </div>
         )}
 
-        {/* Picker eller "lägg till"-knapp */}
         {showPicker ? (
           <IngredientPicker
             onSelect={handlePickerSelect}
@@ -276,9 +368,16 @@ function RecipeForm({ session, editingRecipe, onSaved, onCancel }) {
         <button
           className="primary"
           onClick={saveRecipe}
+          disabled={saving || uploadingImage}
           style={{ width: "100%" }}
         >
-          {editingRecipe ? "Spara ändringar" : "Spara recept"}
+          {uploadingImage
+            ? "Laddar upp bild..."
+            : saving
+            ? "Sparar..."
+            : editingRecipe
+            ? "Spara ändringar"
+            : "Spara recept"}
         </button>
       </div>
     </div>

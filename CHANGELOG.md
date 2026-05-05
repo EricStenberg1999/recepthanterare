@@ -7,6 +7,31 @@ och projektet använder [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-05-04
+
+### Added
+- Bilduppladdning på recept med automatisk komprimering (max 1200px, JPEG 80%)
+- Bildvisning i receptdetalj och thumbnail i receptlistan
+- AI-receptförslag baserat på matförråd (`/api/suggest-recipes`)
+  - Strikt läge: enbart ingredienser från förrådet
+  - Kreativt läge: tillåter extra ingredienser med valbar gräns (1-10)
+  - "BEHÖVS"-tagg på saknade ingredienser + knapp för att lägga dem på inköpslistan
+- Akinator-stil receptväglednings-läge (`/api/akinator`) — AI ställer upp till 8 frågor och föreslår ett perfekt recept
+- "Spara som recept"-knapp på alla AI-förslag
+- Bocka av steg i instruktioner — checkbox-cirklar i receptdetalj (state återställs vid sidladdning)
+
+### Changed
+- Suggestions-fliken visar nu interaktiv UI med toggle, slider och strukturerade förslag istället för fritext
+
+### Fixed
+- `scaleAmount`-funktionen återställd i RecipeDetail (saknades efter tidigare refaktor)
+
+### Removed
+- `api/ask-claude.js` (test-endpoint från utveckling, ersatt av riktiga endpoints)
+
+### Security
+- Backend-endpoints `/api/suggest-recipes` och `/api/akinator` rate-limitas (30/h globalt, 10/dag per användare)
+
 ## [1.3.0] - 2026-04-21
 
 ### Added
@@ -101,10 +126,10 @@ och projektet använder [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-## Changed
+### Changed
 
 ### Fixed
 
-## Removed
+### Removed
 
-## Security
+### Security

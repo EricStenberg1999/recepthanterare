@@ -1,110 +1,319 @@
 import { useState, useEffect } from "react"
 import { supabase } from "../supabase"
+import Akinator from "./Akinator"
 
-function Suggestions() {
+function Suggestions({ session }) {
   const [fridgeItems, setFridgeItems] = useState([])
-  const [suggestions, setSuggestions] = useState("")
+  const [allIngredients, setAllIngredients] = useState([])
+  const [suggestions, setSuggestions] = useState([])
   const [loading, setLoading] = useState(false)
   const [fridgeLoading, setFridgeLoading] = useState(true)
+  const [error, setError] = useState("")
+  const [savedIds, setSavedIds] = useState(new Set())
+  const [addedToList, setAddedToList] = useState(new Set())
+  const [showAkinator, setShowAkinator] = useState(false)
+
+  // Mode: "strict" eller "creative"
+  const [mode, setMode] = useState("strict")
+  const [maxExtra, setMaxExtra] = useState(3)
 
   useEffect(() => {
-    fetchFridge()
+    fetchInitialData()
   }, [])
 
-  async function fetchFridge() {
-    // RLS filtrerar automatiskt till inloggad användares rader
-    const { data, error } = await supabase
-      .from("fridge")
-      .select(`
-        id,
-        amount,
-        ingredients (
+  async function fetchInitialData() {
+    const [fridgeRes, ingredientsRes] = await Promise.all([
+      supabase
+        .from("fridge")
+        .select(`
           id,
-          name,
-          canonical_unit
-        )
-      `)
-      .order("id")
+          amount,
+          ingredients (
+            id,
+            name,
+            canonical_unit
+          )
+        `)
+        .order("id"),
+      supabase
+        .from("ingredients")
+        .select("id, name, canonical_unit"),
+    ])
 
-    if (error) {
-      console.error("Fel vid hämtning:", error)
+    if (fridgeRes.error) {
+      console.error("Fel vid hämtning av förråd:", fridgeRes.error)
     } else {
-      setFridgeItems(data)
+      setFridgeItems(fridgeRes.data)
     }
-    setFridgeLoading(false)
-  }
 
-  // Formatera kylinnehållet till en läsbar textsträng för AI:n
-  function formatFridgeForAI() {
-    return fridgeItems
-      .map(
-        item =>
-          `${item.ingredients.name} (${item.amount} ${item.ingredients.canonical_unit})`
-      )
-      .join(", ")
+    if (ingredientsRes.error) {
+      console.error("Fel vid hämtning av ingredienser:", ingredientsRes.error)
+    } else {
+      setAllIngredients(ingredientsRes.data)
+    }
+
+    setFridgeLoading(false)
   }
 
   async function getSuggestions() {
     if (fridgeItems.length === 0) return
     setLoading(true)
-    setSuggestions("")
+    setError("")
+    setSuggestions([])
+    setSavedIds(new Set())
+    setAddedToList(new Set())
 
-    const prompt = `Jag har följande ingredienser hemma: ${formatFridgeForAI()}.
-    
-Ge mig 3 receptförslag på vad jag kan laga med dessa ingredienser. 
-För varje förslag, ange:
-- Receptnamn
-- Vilka av mina ingredienser som används
-- Eventuella extra ingredienser som behövs (håll det minimalt)
-- Kort beskrivning av rätten
-
-Svara på svenska.`
+    const fridgePayload = fridgeItems.map(item => ({
+      name: item.ingredients.name,
+      amount: item.amount,
+      unit: item.ingredients.canonical_unit,
+    }))
 
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("/api/suggest-recipes", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": import.meta.env.VITE_ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [{ role: "user", content: prompt }],
+          fridgeItems: fridgePayload,
+          userId: session.user.id,
+          mode,
+          maxExtra,
         }),
       })
 
       const data = await response.json()
-      setSuggestions(data.content[0].text)
-    } catch (error) {
-      setSuggestions("Något gick fel, försök igen.")
-      console.error("API-fel:", error)
+
+      if (!response.ok) {
+        setError(data.error || "Något gick fel")
+        setLoading(false)
+        return
+      }
+
+      setSuggestions(data.suggestions || [])
+    } catch (err) {
+      setError("Oväntat fel: " + err.message)
     }
 
     setLoading(false)
   }
 
+  async function saveSuggestionAsRecipe(suggestion, index) {
+    try {
+      const { data: recipeData, error: recipeError } = await supabase
+        .from("recipes")
+        .insert([
+          {
+            name: suggestion.name,
+            description: suggestion.description || "",
+            instructions: suggestion.instructions || "",
+            source: "ai-suggestion",
+            user_id: session.user.id,
+            is_shared: false,
+            base_servings: suggestion.base_servings || 4,
+          },
+        ])
+        .select()
+
+      if (recipeError) {
+        alert("Kunde inte spara recept: " + recipeError.message)
+        return
+      }
+
+      const recipeId = recipeData[0].id
+
+      const rows = []
+      for (const ing of suggestion.ingredients) {
+        const matched = allIngredients.find(
+          i => i.name.toLowerCase() === ing.name.toLowerCase()
+        )
+        if (matched && ing.amount) {
+          rows.push({
+            recipe_id: recipeId,
+            ingredient_id: matched.id,
+            amount: ing.amount,
+            input_unit: ing.unit || matched.canonical_unit,
+          })
+        }
+      }
+
+      if (rows.length > 0) {
+        const { error: ingError } = await supabase
+          .from("recipe_ingredients")
+          .insert(rows)
+
+        if (ingError) {
+          alert("Recept sparat men ingredienser fel: " + ingError.message)
+          return
+        }
+      }
+
+      setSavedIds(new Set([...savedIds, index]))
+    } catch (err) {
+      alert("Oväntat fel vid sparning: " + err.message)
+    }
+  }
+
+  // Lägg saknade ingredienser från ett förslag på inköpslistan
+  async function addMissingToShoppingList(suggestion, index) {
+    const missing = suggestion.ingredients.filter(i => i.missing)
+    if (missing.length === 0) {
+      alert("Inga saknade ingredienser i det här receptet!")
+      return
+    }
+
+    const matchedRows = []
+    const customRows = []
+
+    for (const ing of missing) {
+      const matched = allIngredients.find(
+        i => i.name.toLowerCase() === ing.name.toLowerCase()
+      )
+
+      if (matched) {
+        matchedRows.push({
+          user_id: session.user.id,
+          ingredient_id: matched.id,
+          amount: ing.amount || null,
+        })
+      } else {
+        customRows.push({
+          user_id: session.user.id,
+          custom_name: ing.name.toLowerCase(),
+          amount: ing.amount || null,
+          unit: ing.unit || "st",
+        })
+      }
+    }
+
+    if (matchedRows.length > 0) {
+      const { error } = await supabase
+        .from("shopping_list")
+        .upsert(matchedRows, { onConflict: "user_id,ingredient_id" })
+
+      if (error) {
+        alert("Fel vid tillägg till listan: " + error.message)
+        return
+      }
+    }
+
+    if (customRows.length > 0) {
+      const { error } = await supabase.from("shopping_list").insert(customRows)
+      if (error) {
+        alert("Fel vid tillägg av custom-varor: " + error.message)
+        return
+      }
+    }
+
+    setAddedToList(new Set([...addedToList, index]))
+  }
+
   if (fridgeLoading) return <p>Laddar...</p>
+
+  // Akinator-vyn — visas istället för normal Suggestions när aktiv
+  if (showAkinator) {
+    return (
+      <Akinator
+        session={session}
+        onClose={() => setShowAkinator(false)}
+        onSaved={() => {}}
+      />
+    )
+  }
 
   return (
     <div>
       <h2 style={{ marginBottom: "20px" }}>✨ Receptförslag</h2>
 
-      {/* Visa vad som finns i kylen */}
       <div className="card">
-        <h3 style={{ marginBottom: "10px" }}>Baserat på din kyl</h3>
+        <h3 style={{ marginBottom: "10px" }}>Baserat på ditt matförråd</h3>
+
         {fridgeItems.length === 0 ? (
-          <p style={{ color: "#999" }}>Lägg till ingredienser i kylen först!</p>
+          <p style={{ color: "#999" }}>
+            Lägg till ingredienser i Mitt Matförråd först!
+          </p>
         ) : (
           <>
-            <p style={{ color: "#666", marginBottom: "15px" }}>
-              {formatFridgeForAI()}
+            <p style={{ color: "#666", fontSize: "14px", marginBottom: "15px" }}>
+              {fridgeItems.length} {fridgeItems.length === 1 ? "vara" : "varor"}{" "}
+              i förrådet
             </p>
+
+            {/* Toggle */}
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
+                marginBottom: "15px",
+                background: "#f0f0f0",
+                padding: "4px",
+                borderRadius: "8px",
+              }}
+            >
+              <button
+                onClick={() => setMode("strict")}
+                style={{
+                  flex: 1,
+                  padding: "8px",
+                  background: mode === "strict" ? "#4CAF50" : "transparent",
+                  color: mode === "strict" ? "white" : "#666",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontWeight: mode === "strict" ? "bold" : "normal",
+                }}
+              >
+                🔒 Strikt
+              </button>
+              <button
+                onClick={() => setMode("creative")}
+                style={{
+                  flex: 1,
+                  padding: "8px",
+                  background: mode === "creative" ? "#4CAF50" : "transparent",
+                  color: mode === "creative" ? "white" : "#666",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontWeight: mode === "creative" ? "bold" : "normal",
+                }}
+              >
+                ✨ Kreativt
+              </button>
+            </div>
+
+            <p style={{ fontSize: "13px", color: "#666", marginBottom: "15px" }}>
+              {mode === "strict"
+                ? "Endast recept du kan laga med det du redan har."
+                : "Recept som kan inkludera extra ingredienser att handla."}
+            </p>
+
+            {mode === "creative" && (
+              <div style={{ marginBottom: "15px" }}>
+                <label
+                  style={{
+                    fontSize: "14px",
+                    display: "block",
+                    marginBottom: "5px",
+                  }}
+                >
+                  Max extra ingredienser per recept: <strong>{maxExtra}</strong>
+                </label>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  value={maxExtra}
+                  onChange={e => setMaxExtra(parseInt(e.target.value))}
+                  style={{ width: "100%" }}
+                />
+              </div>
+            )}
+
             <button
               className="primary"
               onClick={getSuggestions}
               disabled={loading}
+              style={{ width: "100%" }}
             >
               {loading ? "Hämtar förslag..." : "✨ Ge mig förslag!"}
             </button>
@@ -112,29 +321,120 @@ Svara på svenska.`
         )}
       </div>
 
-      {/* Visa AI-förslag */}
-      {suggestions && (
-        <div className="card">
-          <h3 style={{ marginBottom: "15px" }}>Förslag från Claude</h3>
-          <p style={{ lineHeight: "1.8", whiteSpace: "pre-wrap" }}>
-            {suggestions}
-          </p>
+      {/* Akinator-knapp */}
+      <button
+        className="primary"
+        onClick={() => setShowAkinator(true)}
+        style={{ width: "100%", marginBottom: "15px" }}
+      >
+        🧞 Vägled mig (AI ställer frågor)
+      </button>
+
+      {error && (
+        <div
+          className="card"
+          style={{ background: "#fee", border: "1px solid #f88" }}
+        >
+          <p style={{ color: "#d32f2f", margin: 0 }}>{error}</p>
         </div>
       )}
 
-      {/* Info om att API-nyckel saknas */}
-      {!import.meta.env.VITE_ANTHROPIC_API_KEY && (
-        <div
-          className="card"
-          style={{ background: "#fff3cd", border: "1px solid #ffc107" }}
-        >
-          <p>
-            ⚠️ Anthropic API-nyckel saknas. Lägg till{" "}
-            <strong>VITE_ANTHROPIC_API_KEY</strong> i din .env fil för att
-            aktivera AI-förslag.
-          </p>
-        </div>
-      )}
+      {suggestions.map((suggestion, index) => {
+        const missingIngredients = (suggestion.ingredients || []).filter(
+          i => i.missing
+        )
+        const hasMissing = missingIngredients.length > 0
+
+        return (
+          <div key={index} className="card">
+            <h3 style={{ marginBottom: "8px" }}>{suggestion.name}</h3>
+            {suggestion.description && (
+              <p style={{ color: "#666", marginBottom: "12px" }}>
+                {suggestion.description}
+              </p>
+            )}
+
+            <h4 style={{ marginBottom: "8px", fontSize: "14px" }}>
+              Ingredienser ({suggestion.base_servings || 4} portioner):
+            </h4>
+            {suggestion.ingredients?.map((ing, i) => (
+              <div
+                key={i}
+                style={{
+                  fontSize: "14px",
+                  padding: "3px 0",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  flexWrap: "wrap",
+                }}
+              >
+                {ing.missing && (
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      background: "#ffebee",
+                      color: "#c62828",
+                      padding: "2px 6px",
+                      borderRadius: "4px",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    BEHÖVS
+                  </span>
+                )}
+                <span style={{ textTransform: "capitalize" }}>{ing.name}</span>
+                {ing.amount && (
+                  <span style={{ color: "#666" }}>
+                    – {ing.amount} {ing.unit}
+                  </span>
+                )}
+              </div>
+            ))}
+
+            {hasMissing && (
+              <button
+                onClick={() => addMissingToShoppingList(suggestion, index)}
+                disabled={addedToList.has(index)}
+                style={{ width: "100%", marginTop: "12px" }}
+              >
+                {addedToList.has(index)
+                  ? "✓ Tillagda på inköpslistan"
+                  : `🛒 Lägg ${missingIngredients.length} ${
+                      missingIngredients.length === 1 ? "vara" : "varor"
+                    } på inköpslistan`}
+              </button>
+            )}
+
+            {suggestion.instructions && (
+              <>
+                <h4 style={{ margin: "15px 0 8px", fontSize: "14px" }}>
+                  Instruktioner:
+                </h4>
+                <p
+                  style={{
+                    fontSize: "14px",
+                    lineHeight: "1.6",
+                    whiteSpace: "pre-wrap",
+                    color: "#444",
+                  }}
+                >
+                  {suggestion.instructions}
+                </p>
+              </>
+            )}
+
+            <button
+              className="primary"
+              onClick={() => saveSuggestionAsRecipe(suggestion, index)}
+              disabled={savedIds.has(index)}
+              style={{ width: "100%", marginTop: "15px" }}
+            >
+              {savedIds.has(index) ? "✓ Sparat som recept" : "💾 Spara som recept"}
+            </button>
+          </div>
+        )
+      })}
     </div>
   )
 }

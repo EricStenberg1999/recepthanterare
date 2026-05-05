@@ -80,7 +80,7 @@ if (loading) return <p style={{ padding: "20px" }}>Laddar...</p>
 
       {activePage === "fridge" && <Fridge session={session} />}
       {activePage === "recipes" && <Recipes session={session} />}
-      {activePage === "suggestions" && <Suggestions />}
+      {activePage === "suggestions" && <Suggestions session={session} />}
       {activePage === "shopping" && <ShoppingList session={session}/>} 
     </div>
   )

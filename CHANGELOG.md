@@ -7,6 +7,18 @@ och projektet använder [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.4.1]
+
+### Added
+- Keep-alive-endpoint (`/api/ping`) som körs dagligen via Vercel Cron och gör en minimal databasfråga mot Supabase
+- `vercel.json` med cron-schema
+
+### Fixed
+- Appen pausas inte längre av Supabase efter 7 dagars inaktivitet
+
+### Security
+- `/api/ping` skyddas med `CRON_SECRET` så att bara Vercels cron kan anropa den
+
 ## [1.4.0] - 2026-05-04
 
 ### Added

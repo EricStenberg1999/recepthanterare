@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     /* Vercel skickar automatiskt "Authorization: Bearer <CRON_SECRET>"
     när CRON_SECRET finns som miljövariabel. Allt annat avvisas. */
     const secret = process.env.CRON_SECRET
-    if (secret && req.headers.authorization !== 'Bearer ${secret}') {
+    if (secret && req.headers.authorization !== `Bearer ${secret}`) {
         return res.status(401).json({ error: "Unauthorized"})
     }
 
